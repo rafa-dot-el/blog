@@ -1,0 +1,6 @@
+bench
+bench.c
+.direnv/
+resources/_gen/
+themes/hermit/resources/_gen/
+.hugo_build.lock

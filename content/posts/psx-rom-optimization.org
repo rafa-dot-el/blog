@@ -1,0 +1,373 @@
+#+title: Psx Rom Optimization
+#+Date: 2023-04-09
+#+Draft: true
+#+Tags[]: psx, rom, games
+#+PROPERTY: header-args :eval never-export
+
+Considering the management of Playstation 1 games and the available formats, a
+comparison between =iso=, =mdf=, =cue+bin= and =chd= to choose what best fits the
+purpose of storage and
+
+Convert from =iso= and =mdf=, =cue + bin= to =chd=.
+
+* Formats
+** ISO
+https://en.wikipedia.org/wiki/Optical_disc_image
+
+#+begin_quote
+An optical disc image (or ISO image, from the ISO 9660 file system used with
+CD-ROM media) is a disk image that contains everything that would be written to
+an optical disc, disk sector by disc sector, including the optical disc file
+system. ISO images are expected to contain the binary image of an optical media
+file system (usually ISO 9660 and its extensions or UDF), including the data in
+its files in binary format, copied exactly as they were stored on the disc. The
+data inside the ISO image will be structured according to the file system that
+was used on the optical disc from which it was created.
+#+end_quote
+
+** CHD
+
+Source: https://en.wikipedia.org/wiki/MAME#Game_data
+
+#+begin_quote
+Hard disks, compact discs and laserdiscs are stored in a MAME-specific format
+called CHD (Compressed Hunks of Data).[30] Some arcade machines use analog
+hardware, such as laserdiscs, to store and play back audio/video data such as
+soundtracks and cinematics.
+#+end_quote
+
+** MDF
+https://en.wikipedia.org/wiki/Media_Descriptor_File
+
+#+begin_quote
+Media Descriptor File (MDF) is a proprietary disc image file format developed
+for Alcohol 120%, an optical disc authoring program. Daemon Tools, CDemu,
+MagicISO, PowerDVD, and WinCDEmu can also read the MDF format. A disc image is a
+computer file replica of the computer files and file system of an optical disc.
+
+Unlike an ISO image, a Media Descriptor File can contain multiple layers (as
+used in dual-layer recording) and multiple optical disc tracks. Like the IMG
+file format, a Media Descriptor File is a "raw" image of an optical disc. The
+word raw implies that the copy is precise, bit-for-bit, including (where
+appropriate) file-system metadata.
+#+end_quote
+
+
+** ECM
+Just another layer on top of the
+
+* Serial Codes
+- =SCUS=: Used for games released in North America.
+- =SLES=: Used for games released in Europe.
+- =SLPS=: Used for games released in Japan.
+- =SLPM=: Used for games released in Japan that support analog controls.
+- =SLUS=: Used for games released in North America that support analog controls.
+- =SLED=: Used for demos of games released in Europe.
+- =PAPX=: Used for games released in Asia.
+- =SLKA=: Used for games released in South Korea.
+- =SLPM-800xx=: Used for games released in Japan that are part of the Greatest Hits line.
+- =SCES=: Used for games released in Europe that are part of the Platinum range.
+* Tooling
+On Nixos =chdman= is provided by the package =mame-tools=, for converting =mdf= files
+into =iso= the =mdf2iso=.
+
+ * =img= to =iso=: =ccd2iso=
+ * =iso= , =cue + bin= to =chd=: =chdman (=mame-tools)=
+ * =mdf= to =iso=: =mdf2iso=
+ * =ecmtools= to convert =.ecm= into their respective formats
+
+#+begin_src bash
+nix-shell -p mdf2iso mame-tools ccd2iso p7zip ecmtools
+#+end_src
+
+* Emulator support
+For Playstation 1 I'm using /Beetle PSX/ the [[https://docs.libretro.com/library/beetle_psx_hw/][documenatation on retroarch]] points
+out the supported file formats:
+
+- .cue
+- .toc
+- .m3u
+- .ccd
+- .exe
+- .pbp
+- *.chd*
+
+* Extraction
+
+Categorization
+
+#+begin_src bash
+mkdir decompress
+mkdir decompress/zip
+mv *.zip decompress/zip
+mkdir decompress/rar
+mv *.rar decompress/rar
+mkdir decompress/7z
+mv *.7z decompress/7z
+#+end_src
+
+
+#+begin_src bash
+mkdir process
+mkdir process/bin-cue
+mkdir process/ccd
+mkdir process/mdf
+mkdir process/ecm
+mkdir process/iso
+mv *.ccd process/ccd
+mv *.sub process/ccd
+mv *.img process/ccd
+mv *.bin process/bin-cue
+mv *.cue process/bin-cue
+mv *.mdf process/mdf
+mv *.mds process/mdf
+mv *.iso process/iso
+#+end_src
+
+#+begin_src bash
+mv *.ccd ../../process/ccd
+mv *.sub ../../process/ccd
+mv *.img ../../process/ccd
+mv *.bin ../../process/bin-cue
+mv *.cue ../../process/bin-cue
+mv *.mdf ../../process/mdf
+mv *.mds ../../process/mdf
+mv *.iso ../../process/iso
+#+end_src
+
+#+begin_src bash
+for i in *.rar; do unrar e -y "${i}"&; done;
+#+end_src
+
+* Conversion
+
+#+begin_src bash
+for ecm in *.ecm; do ecm2bin "${ecm}"& done
+#+end_src
+
+#+begin_src bash
+for cue in *.cue; do chdman createcd -i "${cue}" -o "${cue%.*}.chd"; done
+#+end_src
+
+
+#+begin_example
+chdman - MAME Compressed Hunks of Data (CHD) manager 0.250 (unknown)
+Output CHD:   Final Fantasy VIII - CD1.chd
+Input file:   Final Fantasy VIII - CD1.cue
+Input tracks: 1
+Input length: 69:11:15
+Compression:  cdlz (CD LZMA), cdzl (CD Deflate), cdfl (CD FLAC)
+Logical size: 762,160,320
+Compression complete ... final ratio = 64.4%
+chdman - MAME Compressed Hunks of Data (CHD) manager 0.250 (unknown)
+Output CHD:   Final Fantasy VIII - CD2.chd
+Input file:   Final Fantasy VIII - CD2.cue
+Input tracks: 1
+Input length: 65:28:14
+Compression:  cdlz (CD LZMA), cdzl (CD Deflate), cdfl (CD FLAC)
+Logical size: 721,219,968
+Compression complete ... final ratio = 62.9%
+chdman - MAME Compressed Hunks of Data (CHD) manager 0.250 (unknown)
+Output CHD:   Final Fantasy VIII - CD3.chd
+Input file:   Final Fantasy VIII - CD3.cue
+Input tracks: 1
+Input length: 68:09:24
+Compression:  cdlz (CD LZMA), cdzl (CD Deflate), cdfl (CD FLAC)
+Logical size: 750,801,600
+Compression complete ... final ratio = 62.3%
+chdman - MAME Compressed Hunks of Data (CHD) manager 0.250 (unknown)
+Output CHD:   Final Fantasy VIII - CD4.chd
+Input file:   Final Fantasy VIII - CD4.cue
+Input tracks: 1
+Input length: 65:36:70
+Compression:  cdlz (CD LZMA), cdzl (CD Deflate), cdfl (CD FLAC)
+Logical size: 722,825,856
+Compression complete ... final ratio = 61.3%
+#+end_example
+
+#+begin_src bash
+ls -lha
+#+end_src
+
+
+
+* Space saved
+** Final Fantasy VIII
+
+#+begin_example
+du -sch *.bin
+699M Final Fantasy VIII - CD1.bin
+661M Final Fantasy VIII - CD2.bin
+688M Final Fantasy VIII - CD3.bin
+663M Final Fantasy VIII - CD4.bin
+2.7G total
+#+end_example
+
+#+begin_example
+ du -sch *.chd
+469M Final Fantasy VIII - CD1.chd
+432M Final Fantasy VIII - CD2.chd
+447M Final Fantasy VIII - CD3.chd
+423M Final Fantasy VIII - CD4.chd
+1.8G total
+#+end_example
+
+** Metal Gear Solid
+#+begin_example
+[nix-shell:~/games/Playstation1/Metal Gear Solid]$ du -sch *.iso
+659M Metal Gear Solid - CD1.iso
+686M Metal Gear Solid - CD2.iso
+1.4G total
+
+[nix-shell:~/games/Playstation1/Metal Gear Solid]$ du -sch *.chd
+384M Metal Gear Solid - CD1.chd
+355M Metal Gear Solid - CD2.chd
+738M total
+#+end_example
+* Mass conversion
+#+begin_example
+# ls | rev | cut -d '.' -f 1 | rev | sort | uniq -c
+    475 7z
+    871 rar
+     43 zip
+#+end_example
+** Zip
+#+begin_src bash
+for f in *.zip; do unzip "${f}"; done;
+#+end_src
+
+
+** ccd + img + sub
+
+#+begin_src bash
+for cue in *.cue; do chdman createcd -i "${cue}" -o "${cue%.*}.chd"; done
+#+end_src
+* =DAT= files and Rom organization
+From Retro Pie docs:
+
+#+begin_quote
+Once you begin working with software tools to help validate, rebuild, or filter
+your ROM collection, you will quickly encounter the need for "DAT" files, so
+named because they usually (but not always!) have the file extension .dat.
+
+DATs describe the ROM contents including filenames, file sizes, and checksums to
+verify contents are not incorrect or corrupt. DATs are usually maintained either
+by emulator developers (such as with MAME or FinalBurn Neo) or digital
+preservation organizations like TOSEC and No-Intro.
+#+end_quote
+
+[[https://datomatic.no-intro.org/index.php?page=download&s=64&op=daily][Dat files can obtained from no-intro.org]] as
+* Appendix
+** Bash helpers
+
+#+begin_src bash
+function normalize_file {
+    local file="$1"
+    local new_file="${file%.*}.$(echo "${file##*.}" | tr '[:upper:]' '[:lower:]')"
+    if [ "$file" != "$new_file" ]; then
+        mv "$file" "$new_file"
+        echo "Renamed $file to $new_file"
+    fi
+}
+
+function normalize_directory {
+    local dir="${1:-.}"
+    shopt -s nullglob
+    for file in "$dir"/*; do
+        if [ -d "$file" ]; then
+            search_directory "$file"
+        else
+            normalize_file "$file"
+        fi
+    done
+}
+
+function flatten_directories {
+    local dir="${1:-.}"
+    shopt -s nullglob
+    for file in "$dir"/*; do
+        if [ -d "$file" ]; then
+            flatten_directories "$file"
+            # Remove the directory if it is empty
+            rmdir "$file" >/dev/null 2>&1 || true
+        else
+            local filename=$(basename "$file")
+            local basename="${filename%.*}"
+            local extension="${filename##*.}"
+            if [ "${#basename}" -lt 5 ]; then
+                # Keep the file in the directory if the filename (without extension) is less than 5 characters
+                continue
+            fi
+            if [ "$dir" = "." ]; then
+                # Do not move files above the current directory
+                mv "$file" "$dir/$basename.$extension"
+                echo "Moved $file to $dir/$basename.$extension"
+            else
+                # Move the file to the directory above
+                mv "$file" "$dir/../$basename.$extension"
+                echo "Moved $file to $dir/../$basename.$extension"
+            fi
+        fi
+    done
+    if [ "$dir" != "." ]; then
+        # Remove empty directories except for the current directory
+        find "$dir" -type d -empty -delete
+    fi
+}
+
+
+# Define a function to extract the code from a file name
+
+function extract_code {
+    filename="$1"
+    shopt -s nocasematch
+    pattern="(SCUS|SLES|SLPS|SLPM|SLUS|SLED|PAPX|SLKA|SLPM-800|SCES)-[0-9]{5}"
+
+    if [[ "$filename" =~ $pattern ]]; then
+        echo "${BASH_REMATCH[0]}"
+    else
+        echo ""
+    fi
+}
+
+export extensions='.(bin|cue|ccd|sub|img|iso|chd|mds|mdf|ecm)'
+
+
+function ps1_fix_name {
+    local file="$1"
+    local code=$(extract_code "$file")
+
+    if [ -z "$code" ]; then
+        echo "Error: could not find code for file $file" >&2
+        return 1
+    fi
+
+    local title=$(curl -sq "http://redump.org/discs/quicksearch/${code}/" -L | pup 'h1 text{}')
+    if [ -z "$title" ]; then
+        echo "Error: could not find title for file $file" >&2
+        return 1
+    fi
+
+    local extension="${file##*.}"
+    local new_code=$(echo $code | tr '[:lower:]' '[:upper:]')
+    local new_name="${title% -*} [$new_code].${extension}"
+    echo "Renaming $file to $new_name"
+    mv -v "$file" "$new_name"
+}
+
+# Function to fix all file names in the current directory and its subdirectories
+function ps1_fix_all_names {
+    # Find all files with the pattern and extensions
+    shopt -s nullglob
+    for file in *.{bin,cue,ccd,sub,img,iso,chd,mds,mdf,ecm}; do
+        ps1_fix_name "$file"
+    done
+}
+
+
+#+end_src
+
+* References
+- [[https://github.com/alucryd/oxyromon][GitHub - alucryd/oxyromon: Rusty ROM OrgaNizer]]
+- [[https://github.com/emmercm/igir][GitHub - emmercm/igir: 🕹 A video game ROM collection manager to help filter, ...]]
+- [[https://github.com/sselph/scraper][GitHub - sselph/scraper: A scraper for EmulationStation written in Go using h...]]

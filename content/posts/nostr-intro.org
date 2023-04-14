@@ -1,0 +1,63 @@
+#+title: Nostr Intro
+#+Date: 2023-05-07
+#+Draft: true
+#+Tags[]: untagged
+#+PROPERTY: header-args :eval never-export
+
+* Usage
+** Create keys
+** Follow
+*** Find
+https://github.com/nostr-protocol/nips/blob/master/05.md
+Mapping Nostr keys to DNS-based internet identifiers
+
+final optional author:fiatjaf author:mikedilger
+
+On events of kind 0 (set_metadata) one can specify the key "nip05" with an internet identifier (an email-like address) as the value. Although there is a link to a very liberal "internet identifier" specification above, NIP-05 assumes the <local-part> part will be restricted to the characters a-z0-9-_., case insensitive.
+
+Upon seeing that, the client splits the identifier into <local-part> and <domain> and use these values to make a GET request to https://<domain>/.well-known/nostr.json?name=<local-part>.
+
+The result should be a JSON document object with a key "names" that should then be a mapping of names to hex formatted public keys. If the public key for the given <name> matches the pubkey from the set_metadata event, the client then concludes that the given pubkey can indeed be referenced by its identifier.
+** Communicate
+
+** File sharing
+https://github.com/nostr-protocol/nips/blob/master/94.md
+The purpose of this NIP is to allow an organization and classification of shared files. So that relays can filter and organize in any way that is of interest. With that, multiple types of filesharing clients can be created. NIP-94 support is not expected to be implemented by "social" clients that deal with kind:1 notes or by longform clients that deal with kind:30023 articles.
+* Protocol
+
+** NIP-01
+https://github.com/nostr-protocol/nips/blob/master/01.md
+
+
+* Key Generation
+
+** NIP-19
+https://github.com/nostr-protocol/nips/blob/master/19.md
+This NIP standardizes bech32-formatted strings that can be used to display keys, ids and other information in clients. These formats are not meant to be used anywhere in the core protocol, they are only meant for displaying to users, copy-pasting, sharing, rendering QR codes and inputting data.
+
+It is recommended that ids and keys are stored in either hex or binary format, since these formats are closer to what must actually be used the core protocol.
+** NIP-26
+https://github.com/nostr-protocol/nips/blob/master/26.md
+
+This NIP defines how events can be delegated so that they can be signed by other keypairs.
+
+Another application of this proposal is to abstract away the use of the 'root' keypairs when interacting with clients. For example, a user could generate new keypairs for each client they wish to use and authorize those keypairs to generate events on behalf of their root pubkey, where the root keypair is stored in cold storage.
+
+* Messages
+
+* Tooling
+- https://github.com/fiatjaf/noscl
+- https://github.com/jacany/nblog
+- https://github.com/jeffthibault/python-nostr
+
+* Libraries
+
+* Sites using nostr
+
+- https://blogstack.io/
+- https://nosbin.com/
+
+* References
+- [[https://usenostr.org/][UseNostr]]
+- https://github.com/jeffthibault/python-nostr
+- https://github.com/nbd-wtf/go-nostr
