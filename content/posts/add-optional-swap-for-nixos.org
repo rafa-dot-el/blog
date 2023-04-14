@@ -1,0 +1,1298 @@
+#+title: Add Optional Swap For Nixos
+#+Tags[]: nixos linux
+#+Date: 2023-04-09
+#+Draft: false
+#+PROPERTY: header-args :eval never-export
+
+The main idea behind the usage of SSDs in general is the speed, but sometimes
+cheap SSDs can be unreliable while still performing quite well.
+
+While using Nixos if some hardware is not available at boot you can't simply
+boot on rescue mode and perform a quick edit on =/etc/fstab= , there are more
+advanced recovery processes that need to take place. The main idea of this
+article is to explore the usage of a cheap =NVMe= , in my case, a cheap =M.2= card
+while keeping the system able to boot in case of a hardware failure.
+
+Within this document I intend to explore the idea and results of adding such
+device as a swap drive, its performance implications and overall results.
+
+* Benchmark
+This document's recommendations are grounded on the experimental results and
+benchmarks. It is advisable to carry out these same benchmarks on other hardware
+because the criteria for selecting the optimal choice may differ depending on
+the outcome generated from a specific option. This ensures that decisions made
+are not biased towards one particular hardware arrangement and are instead based
+on objective measurements and observations. Keep in mind that the ideal Swap
+setup may vary based on the hardware employed, thus running benchmarks on the
+system before implementation can help achieve the best overall outcome.
+
+A quote about NVMe from Wikipedia:
+#+begin_quote
+By its design, NVM Express allows host hardware and software to fully exploit
+the levels of parallelism possible in modern SSDs. As a result, NVM Express
+reduces I/O overhead and brings various performance improvements relative to
+previous logical-device interfaces, including multiple long command queues, and
+reduced latency. - Wikipedia on NVMe
+#+end_quote
+
+Based on the following statement from Wikipedia and benchmarks, these devices a
+good choice for caching and swap partitions. Below the benchmark for the NVMe
+drive that will be used:
+
+#+begin_src bash :results output verbatin
+sudo nix-shell -p hdparm --command "hdparm -tT /dev/nvme1n1"
+#+end_src
+
+#+RESULTS:
+:
+: /dev/nvme1n1:
+:  Timing cached reads:   22858 MB in  2.00 seconds = 11449.78 MB/sec
+:  Timing buffered disk reads: 2878 MB in  3.00 seconds = 959.07 MB/sec
+
+The main focus on the above execution result should be on the /Timing buffered
+disk reads/. Working with this as a base we can understand better the impact of
+each and every choice made later on.
+** Luks
+Although Luks may have a slight performance impact, it is necessary to use
+encryption on all data at rest according to my threat model. Additionally,
+sensitive personal data, access tokens and other credentials are stored in RAM
+and must be protected accordingly. To assess the performance of Luks on your
+hardware, use the following command.
+
+#+begin_src bash ;results raw verbatin drawer
+cryptsetup benchmark
+#+end_src
+
+*** Benchmark table for Luks
+| Algorithm   | Key  | Encryption    | Decryption    |
+| aes-cbc     | 128b | 1167.7  MiB/s | 3614.7  MiB/s |
+| serpent-cbc | 128b | 110.2  MiB/s  | 402.6  MiB/s  |
+| twofish-cbc | 128b | 227.6  MiB/s  | 407.1  MiB/s  |
+| aes-cbc     | 256b | 898.8  MiB/s  | 3065.7  MiB/s |
+| serpent-cbc | 256b | 111.8  MiB/s  | 402.7  MiB/s  |
+| twofish-cbc | 256b | 230.7  MiB/s  | 407.9  MiB/s  |
+| aes-xts     | 256b | 2946.5  MiB/s | 2956.0  MiB/s |
+| serpent-xts | 256b | 369.3  MiB/s  | 370.7  MiB/s  |
+| twofish-xts | 256b | 376.1  MiB/s  | 376.5  MiB/s  |
+| aes-xts     | 512b | 2520.8  MiB/s | 2522.5  MiB/s |
+| serpent-xts | 512b | 374.0  MiB/s  | 370.7  MiB/s  |
+| twofish-xts | 512b | 378.5  MiB/s  | 377.0  MiB/s  |
+
+The results indicate that the =aes-xts= algorithm offers stable read and write
+throughput, making it a well-balanced choice. However, it is important to note
+that this algorithm may be 20% slower than =aes-cbc= for decryption. When using
+swap on a machine, consistent levels of writes are required. If a workload
+primarily comprises of read operations, other options should be considered.
+Additionally, it is possible to enhance security by using a 512-bit key,
+although this will result in a performance loss of approximately 20% for both
+read and write operations and is not required on this specific scenario.
+
+**** Notes on AES XEX-based tweaked-codebook mode with ciphertext stealing (XTS)
+
+Analyzing deeper the XTS [cite:@mcgrew_extended_2004] implementation and our
+threat model, consider the [[https://en.wikipedia.org/wiki/Disk_encryption_theory#XTS][statement below]]:
+
+#+begin_quote
+XTS mode is susceptible to data manipulation and tampering, and applications
+must employ measures to detect modifications of data if manipulation and
+tampering is a concern: "...since there are no authentication tags then any
+ciphertext (original or modified by attacker) will be decrypted as some
+plaintext and there is no built-in mechanism to detect alterations. The best
+that can be done is to ensure that any alteration of the ciphertext will
+completely randomize the plaintext, and rely on the application that uses this
+transform to include sufficient redundancy in its plaintext to detect and
+discard such random plaintexts." This would require maintaining checksums for
+all data and metadata on disk, as done in ZFS or Btrfs. However, in commonly
+used file systems such as ext4 and NTFS only metadata is protected against
+tampering, while the detection of data tampering is non-existent. - Wikipedia
+#+end_quote
+
+We can assume that is not our concern given that the swap is handled and cleaned
+up by the kernel, and all modifications to the disk structure at rest by an
+attacker won't effectively be able to reflect in any deterministic structure
+given the encryption. The only attack vector is destroying the actual data with
+random noise which will invalidate the whole device and is beyond the threat
+model of this implementation.
+
+***** Kernel references for cleaning up the swap
+
+To elaborate further on the risk raised above, let's explore the kernel
+implementation. The new kernel implementation uses [[https://github.com/torvalds/linux/blob/aa318c48808c0aa73216bd94c54c4553d3663add/mm/frontswap.c#L110][Frontswap]] as the frontend for
+the =swap= interfaces. The following is the initialization code taken from
+[[https://github.com/torvalds/linux/blob/aa318c48808c0aa73216bd94c54c4553d3663add/mm/frontswap.c#L110][frontswap.c]]
+
+#+begin_src c
+/*
+ * Called when a swap device is swapon'd.
+ */
+void frontswap_init(unsigned type, unsigned long *map)
+#+end_src
+
+The initialization delegates the process to a field called =init= stored inside
+the =frontswap_ops= structure, defined below:
+
+#+begin_src c
+/*
+ * frontswap_ops are added by frontswap_register_ops, and provide the
+ * frontswap "backend" implementation functions.  Multiple implementations
+ * may be registered, but implementations can never deregister.  This
+ * is a simple singly-linked list of all registered implementations.
+ */
+static const struct frontswap_ops *frontswap_ops __read_mostly;
+#+end_src
+
+This structure is populated using the =frontswap_register_ops= function.
+#+begin_src c
+/*
+ * Register operations for frontswap
+ */
+int frontswap_register_ops(const struct frontswap_ops *ops)
+{
+  if (frontswap_ops)
+    return -EINVAL;
+
+  frontswap_ops = ops;
+  static_branch_inc(&frontswap_enabled_key);
+  return 0;
+}
+#+end_src
+
+In our current concern and use case, the usage of =zswap= handles it on [[https://github.com/torvalds/linux/blob/aa318c48808c0aa73216bd94c54c4553d3663add/mm/zswap.c#L1518][zswap.c]]
+
+#+begin_src c
+ret = frontswap_register_ops(&zswap_frontswap_ops);
+#+end_src
+
+Which is [[https://github.com/torvalds/linux/blob/aa318c48808c0aa73216bd94c54c4553d3663add/mm/zswap.c#L1421][defined by the following struct]]:
+
+#+begin_src c
+static const struct frontswap_ops zswap_frontswap_ops = {
+  .store = zswap_frontswap_store,
+  .load = zswap_frontswap_load,
+  .invalidate_page = zswap_frontswap_invalidate_page,
+  .invalidate_area = zswap_frontswap_invalidate_area,
+  .init = zswap_frontswap_init
+};
+#+end_src
+
+The function [[https://github.com/torvalds/linux/blob/aa318c48808c0aa73216bd94c54c4553d3663add/mm/zswap.c#L1406][zswap_frontswap_init]] is defined as follows:
+
+#+begin_src c
+static void zswap_frontswap_init(unsigned type)
+{
+  struct zswap_tree *tree;
+
+  tree = kzalloc(sizeof(*tree), GFP_KERNEL);
+  if (!tree) {
+    pr_err("alloc failed, zswap disabled for swap type %d\n", type);
+    return;
+  }
+
+  tree->rbroot = RB_ROOT;
+  spin_lock_init(&tree->lock);
+  zswap_trees[type] = tree;
+}
+#+end_src
+
+So we finally got to the end of the execution tree, and we can prove that it is
+initialized and set to zero given the usage of =kzalloc=, [[https://archive.kernel.org/oldlinux/htmldocs/kernel-api/API-kzalloc.html][as it is stated on
+kzallow documentation.]]
+
+#+begin_example
+Name
+
+kzalloc — allocate memory. The memory is set to zero.
+Synopsis
+void * kzalloc (size_t size,
+                gfp_t flags);
+
+Arguments
+
+size_t size
+
+    how many bytes of memory are required.
+gfp_t flags
+
+    the type of memory to allocate (see kmalloc).
+
+#+end_example
+
+* Partitioning
+
+The following disk will be split in a 60/40 ratio into two partitions:
+#+begin_src bash :results output verbatin
+lsblk /dev/nvme1n1
+#+end_src
+
+#+RESULTS:
+: NAME        MAJ:MIN RM   SIZE RO TYPE MOUNTPOINTS
+: nvme1n1     259:3    0 476.9G  0 disk
+: ├─nvme1n1p1 259:4    0 286.2G  0 part
+: └─nvme1n1p2 259:5    0 190.8G  0 part
+
+Use the new device
+#+begin_src bash :eval never-export
+export DEVICE="/dev/nvme1n1"
+parted "${DEVICE}" -- mklabel gpt
+parted "${DEVICE}" -- mkpart swap 0% 60%
+parted "${DEVICE}" -- mkpart swap 60% 100%
+#+end_src
+
+** LUKS
+Luks can be setup with the following:
+
+#+begin_src bash :eval never-export
+export DEVICE="/dev/nvme1n1"
+cryptsetup -v luksFormat "${DEVICE}p1"
+cryptsetup -v luksFormat "${DEVICE}p2"
+cryptsetup open "${DEVICE}p1" "swap"
+cryptsetup open "${DEVICE}p2" "cache"
+#+end_src
+
+*** Keys
+Nixos need the keys to be available at boot, or mounted in a partition at boot,
+I will use my =/root= directory for this.
+
+#+begin_src bash :eval never-export
+sudo dd count=4096 bs=1 if=/dev/urandom of=/root/.swap.key
+sudo dd count=4096 bs=1 if=/dev/urandom of=/root/.cache.key
+#+end_src
+
+The last step is to add it to Luks:
+
+#+begin_src bash :eval never-export
+cryptsetup luksAddKey "${DEVICE}p1" /root/.swap.key
+cryptsetup luksAddKey "${DEVICE}p2" /root/.cache.key
+#+end_src
+
+* Notes on making the device optional
+Two things are required to make the device optitonal but keep mounting it at boot:
+
+ - =auto=
+ - =nofail=
+
+This will allow the device to be optional, given that is a cheap piece of
+hardware that can die at any moment. From =mount(8)= manual page:
+
+#+begin_example
+       nofail
+           Do not report errors for this device if it does not exist.
+#+end_example
+
+The nix code representing this configuration:
+
+#+begin_src nix
+swapDevices = [{
+    device = "...";
+    options = [ "defaults" "nofail" ];
+}];
+#+end_src
+
+* Swap
+Creating the =swap= partition using =mkSwap=, first determine the actual disk:
+
+#+begin_src bash :results output verbatin :eval never-export
+sudo mkswap -L swap-nvme /dev/mapper/swap
+#+end_src
+
+#+RESULTS:
+: Setting up swapspace version 1, size = 286.1 GiB (307248492544 bytes)
+: LABEL=swap-nvme, UUID=ac965b4f-f857-4cd3-8c87-91e0ca3a2271
+
+A lazy way to get the proper configuration for the new swap partition is just to
+activate it and run =nixos-generate-config --root /tmp=. It will generate the
+Nixos configuration on =/tmp/etc/nixos/= and you can retrieve the hardware
+configuration directly from the directory.
+
+#+begin_src bash :results output verbatin :eval never-export
+sudo swapon /dev/mapper/swap
+sudo nixos-generate-config --root /tmp
+#+end_src
+
+Another approach is to adapt the code below to your needs. Note *the block device
+backing the swap should be refered by the partition UUID*. Optionally it can be
+refered using partition labels.
+
+#+begin_src nix
+  swapDevices = [{
+    device = "/dev/disk/by-uuid/ac965b4f-f857-4cd3-8c87-91e0ca3a2271";
+    options = [ "defaults" "nofail" ];
+    discardPolicy = "once";
+    encrypted = {
+      label = "swap";
+      blkDev = "/dev/disk/by-partuuid/faeffa11-a44f-47df-9520-4bdeb479a4e2";
+      enable = true;
+      keyFile = "/mnt-root/root/.swap.key";
+    };
+  }];
+#+end_src
+
+After enabling this configuration the system will have available swap memory:
+
+#+begin_src bash :results output verbatin :eval never-export
+swapon --show
+#+end_src
+
+#+RESULTS:
+: NAME      TYPE        SIZE USED PRIO
+: /dev/dm-2 partition 286.1G   1G   -2
+
+** ZSwap
+=ZSwap= is a feature available in the Linux kernel that acts as a virtual memory
+compression tool, creating a compressed write-back cache for swapped pages.
+Rather than sending memory pages to a swap device when they are to be swapped
+out, the kernel creates a dynamic memory pool in system RAM and compresses the
+pages. This reduces the I/O required for swapping in Linux systems and allows
+for deferred or even avoided writeback to the actual swap device. However, it
+should be noted that utilizing this feature will require additional CPU cycles
+to perform the necessary compression.
+
+ZSwap compresses memory pages using the Frontswap API. This provides a
+compressed pool which ZSwap can use to evict pages on a least recently used
+(LRU) basis. In case the pool is full, it writes the compressed pages back to
+the swap device it was sourced from.
+
+Each allocation within the =zpool= is not directly accessible but requires a
+handle to be mapped before being accessed. The compressed memory pool is
+dynamically adjusted based on demand and is not preallocated. The default =zpool=
+type is =zbud=, but it can be changed at boot time or at runtime using the =zpool=
+attribute of the =sysfs=.
+
+#+begin_src bash
+echo zbud > /sys/module/zswap/parameters/zpool
+#+end_src
+
+=Zbud= type utilizes 1 page to store 2 compressed pages, yielding a
+compression ratio of 2:1 or potentially worse due to the use of half-full zbud
+pages. On the other hand, the zsmalloc type applies a more intricate compressed
+page storage mechanism that allows for higher storage densities. However,
+zsmalloc does not allow for compressed page eviction. In other words, once zswap
+reaches its capacity in zsmalloc, it can no longer remove the oldest compressed
+page, and it can only reject new pages.
+
+When transitioning a swap page from frontswap to zswap, zswap establishes and
+preserves a correspondence between the swap entry, consisting of the swap type
+and swap offset, and the zpool handle that denotes the compressed swap page.
+This correspondence is accomplished by utilizing a red-black tree for each swap
+type, wherein the swap offset serves as the key for searching and accessing the
+tree nodes. During a page fault event that involves a Page Table Entry (PTE)
+which is associated with a swap entry, the frontswap module invokes the zswap
+load function. This function is responsible for decompressing the page and
+assigning it to the page that was previously allocated by the page fault
+handler.
+
+Upon detection of a zero count in the PTE pointing to a swap page in =zswap=, the
+swap mechanism triggers the =zswap= invalidate function through frontswap to
+release the compressed entry.
+
+=ZSwap= parameters can be changed at runtime by using the =sysfs= interface as
+follows:
+
+#+begin_src bash
+echo lzo > /sys/module/zswap/parameters/compressor
+#+end_src
+
+Modifying the zpool or compressor parameter while the system is running does not
+affect already compressed pages, which remain in their original zpool. If a page
+is requested from an old zpool, it is uncompressed using the original
+compressor. Once all pages are removed from an old zpoo, the zpool and its
+compressor are freed.
+
+Some of the pages in zswap are same-value filled pages (i.e. contents of the
+page have same value or repetitive pattern). These pages include zero-filled
+pages and they are handled differently. During store operation, a page is
+checked if it is a same-value filled page before compressing it. If true, the
+compressed length of the page is set to zero and the pattern or same-filled
+value is stored.
+
+This is defined at [[https://github.com/torvalds/linux/blob/64569520920a3ca5d456ddd9f4f95fc6ea9b8b45/mm/zswap.c#LL1115C1-L1135C2][zswap.c]]:
+
+#+begin_src c
+static int zswap_is_page_same_filled(void *ptr, unsigned long *value)
+{
+  unsigned long *page;
+  unsigned long val;
+  unsigned int pos, last_pos = PAGE_SIZE / sizeof(*page) - 1;
+
+  page = (unsigned long *)ptr;
+  val = page[0];
+
+  if (val != page[last_pos])
+    return 0;
+
+  for (pos = 1; pos < last_pos; pos++) {
+    if (val != page[pos])
+      return 0;
+  }
+
+  *value = val;
+
+  return 1;
+}
+#+end_src
+
+Same-value filled pages feature is enabled by default as defined in [[https://github.com/torvalds/linux/blob/64569520920a3ca5d456ddd9f4f95fc6ea9b8b45/mm/zswap.c#LL131C4-L131C4][zswap.c]]:
+
+#+begin_src c
+/*
+ * Enable/disable handling same-value filled pages (enabled by default).
+ * If disabled every page is considered non-same-value filled.
+ */
+static bool zswap_same_filled_pages_enabled = true;
+module_param_named(same_filled_pages_enabled, zswap_same_filled_pages_enabled, bool, 0644);
+#+end_src
+
+And can be disabled with:
+
+#+begin_src bash
+echo 0 > /sys/module/zswap/parameters/same_filled_pages_enabled
+#+end_src
+
+*** Compression algorithm
+The choice of the compression algorithm will be made considering the input as a
+low entropy, while this doesn't reflect all the possible use cases, this
+reflects a quite significant amount of use cases on virtualization and machine
+learning models where the entropy is low. For the benchmark =lzbench= will be
+used.
+
+#+begin_src
+git clone --depth=1 git@github.com:torvalds/linux.git
+tar cf benchmark-linux linux/
+#+end_src
+
+#+begin_src bash
+lzbench benchmark-linux
+#+end_src
+
+Below the normalized table with the output sorted by .
+
+| Compressor name     | Compress.  | Decompress. | Compr. size |  Ratio |
+|---------------------+------------+-------------+-------------+--------|
+| memcpy              | 14056 MB/s | 14754 MB/s  |  1632276480 | 100.00 |
+| pithy 2011-12-24 -0 | 13817 MB/s | 13463 MB/s  |  1632245638 | 100.00 |
+| shrinker 0.1        | 10285 MB/s | 13367 MB/s  |  1616198100 |  99.01 |
+| pithy 2011-12-24 -6 | 15377 MB/s | 12930 MB/s  |  1632244500 | 100.00 |
+| pithy 2011-12-24 -9 | 14700 MB/s | 12148 MB/s  |  1632244506 | 100.00 |
+| pithy 2011-12-24 -3 | 15092 MB/s | 11888 MB/s  |  1632244920 | 100.00 |
+| lz4fast 1.9.2 -17   | 1238 MB/s  | 4194 MB/s   |   815460247 |  49.96 |
+| lz4fast 1.9.2 -3    | 932 MB/s   | 4135 MB/s   |   650891909 |  39.88 |
+| lz4 1.9.2           | 887 MB/s   | 4086 MB/s   |   621863629 |  38.10 |
+| lizard 1.0 -14      | 105 MB/s   | 3650 MB/s   |   530856258 |  32.52 |
+| lizard 1.0 -13      | 115 MB/s   | 3598 MB/s   |   538995628 |  33.02 |
+| lizard 1.0 -12      | 169 MB/s   | 3518 MB/s   |   554852288 |  33.99 |
+| lizard 1.0 -10      | 703 MB/s   | 3421 MB/s   |   630084911 |  38.60 |
+| lizard 1.0 -11      | 604 MB/s   | 3327 MB/s   |   610824735 |  37.42 |
+| density 0.14.2 -1   | 1478 MB/s  | 2146 MB/s   |  1038311442 |  63.61 |
+| snappy 2019-09-30   | 675 MB/s   | 2073 MB/s   |   628223243 |  38.49 |
+| zstd 1.4.5 -1       | 653 MB/s   | 2054 MB/s   |   478706032 |  29.33 |
+| zstd 1.4.5 -4       | 449 MB/s   | 2022 MB/s   |   451605004 |  27.67 |
+| zstd 1.4.5 -3       | 478 MB/s   | 2019 MB/s   |   452407912 |  27.72 |
+| zstd 1.4.5 -5       | 228 MB/s   | 2000 MB/s   |   438812038 |  26.88 |
+| zstd 1.4.5 -2       | 587 MB/s   | 1990 MB/s   |   466928101 |  28.61 |
+| density 0.14.2 -2   | 870 MB/s   | 1497 MB/s   |   707573496 |  43.35 |
+| lzvn 2017-03-08     | 79 MB/s    | 1377 MB/s   |   531756070 |  32.58 |
+| lzf 3.6 -1          | 402 MB/s   | 973 MB/s    |   640607930 |  39.25 |
+| lzo1c 2.10 -1       | 277 MB/s   | 961 MB/s    |   628902387 |  38.53 |
+| lzfse 2017-03-08    | 103 MB/s   | 952 MB/s    |   467004940 |  28.61 |
+| lzo1x 2.10 -1       | 810 MB/s   | 950 MB/s    |   634398382 |  38.87 |
+| lzo1b 2.10 -1       | 295 MB/s   | 939 MB/s    |   610647471 |  37.41 |
+| lzf 3.6 -0          | 423 MB/s   | 934 MB/s    |   661446913 |  40.52 |
+| fastlz 0.1 -2       | 412 MB/s   | 918 MB/s    |   624463805 |  38.26 |
+| lzo1y 2.10 -1       | 810 MB/s   | 904 MB/s    |   631981327 |  38.72 |
+| lzo1f 2.10 -1       | 267 MB/s   | 895 MB/s    |   632987938 |  38.78 |
+| fastlz 0.1 -1       | 348 MB/s   | 893 MB/s    |   647180421 |  39.65 |
+| lzrw 15-Jul-1991 -3 | 373 MB/s   | 743 MB/s    |   702146953 |  43.02 |
+| lzrw 15-Jul-1991 -1 | 309 MB/s   | 691 MB/s    |   762638110 |  46.72 |
+| lzrw 15-Jul-1991 -5 | 167 MB/s   | 586 MB/s    |   629737911 |  38.58 |
+| quicklz 1.5.0 -1    | 568 MB/s   | 566 MB/s    |   614024659 |  37.62 |
+| tornado 0.6a -1     | 412 MB/s   | 555 MB/s    |   676369612 |  41.44 |
+| lzrw 15-Jul-1991 -4 | 409 MB/s   | 554 MB/s    |   678729307 |  41.58 |
+| tornado 0.6a -2     | 367 MB/s   | 535 MB/s    |   591666214 |  36.25 |
+| lzjb 2010           | 387 MB/s   | 530 MB/s    |   777076808 |  47.61 |
+| quicklz 1.5.0 -2    | 287 MB/s   | 463 MB/s    |   568841016 |  34.85 |
+| density 0.14.2 -3   | 487 MB/s   | 423 MB/s    |   612773674 |  37.54 |
+| tornado 0.6a -3     | 251 MB/s   | 324 MB/s    |   493115543 |  30.21 |
+
+This makes =lz4fast 1.9.2 -3= a balanced option, while the write is a little bit
+underperforming on what is the throughput of the NVMe at 932 MB/s, most
+operations are read and the throughput at 4135 MB/s along with the ratio of
+39.88 are good enough.
+
+Linux Kernel defines it as [[https://github.com/torvalds/linux/blob/aa318c48808c0aa73216bd94c54c4553d3663add/include/linux/lz4.h#L66][at lz4.h]].
+
+#+begin_src c
+#define LZ4_ACCELERATION_DEFAULT 1
+#+end_src
+
+From the manual [[https://github.com/lz4/lz4/blob/e3974e5a1476190afdd8b44e67106cfb7097a1d5/doc/lz4_manual.html#L145][reference.]]
+
+#+begin_quote
+Same as LZ4_compress_default(), but allows selection of "acceleration" factor.
+The larger the acceleration value, the faster the algorithm, but also the lesser
+the compression. It's a trade-off. It can be fine tuned, with each successive
+value providing roughly +~3% to speed. An acceleration value of "1" is the same
+as regular LZ4_compress_default() Values <= 0 will be replaced by
+LZ4_ACCELERATION_DEFAULT (currently = 1, see lz4.c). Values >
+LZ4_ACCELERATION_MAX will be replaced by LZ4_ACCELERATION_MAX (currently =
+65537, see lz4.c).
+#+end_quote
+
+So similar *but not exactly the same results* as the shown above should be expected.
+
+*** Setting Nixos configuration for ZSwap with =lz4fast=
+Nixos has already built in support for [[https://github.com/NixOS/nixpkgs/blob/e8a861f940da69ca8d4607b893354b7177f7250e/pkgs/os-specific/linux/kernel/common-config.nix#L682][zswap]], it is just required to be enabled.
+First as a good practice for configuration management, is required to confirm
+that the configuration is not set, and then after the change is applied, to
+confirm that it is up and running. Whether =Zswap= is enabled at the boot time
+depends on whether the =CONFIG_ZSWAP_DEFAULT_ON= =Kconfig= option is enabled or not.
+This setting can then be overridden by providing the kernel command line
+=zswap.enabled= option, for example =zswap.enabled=0.= ZSwap can also be enabled and
+disabled at runtime using the =sysfs= interface.
+
+
+#+begin_src bash
+cat /proc/cmdline
+#+end_src
+
+#+RESULTS:
+: initrd=\efi\nixos\dnap9dk2mgx1gdjgd61bdircvd08pbn7-initrd-linux-6.1-initrd.efi init=/nix/store/dgyxblfcrdgy6f1xiwfzvyaipzsh78vg-nixos-system-markarth-23.05.20230305.dirty/init loglevel=4
+
+#+begin_src bash
+sudo cat /sys/module/zswap/parameters/enabled
+#+end_src
+
+#+RESULTS:
+: N
+
+**** Enabling using =sysfs=
+An alternative is to enable by using the =sysfs= interface. This is useful in
+cases where you want to test it, but prefer to not change the configuration just
+yet.
+
+#+begin_src bash
+sudo echo 1 > /sys/module/zswap/parameters/enabled
+#+end_src
+
+Then the following can be used to assert that it is running:
+#+begin_src bash
+sudo grep -r . /sys/kernel/debug/zswap
+#+end_src
+
+#+RESULTS:
+| /sys/kernel/debug/zswap/same_filled_pages:0     |
+| /sys/kernel/debug/zswap/stored_pages:0          |
+| /sys/kernel/debug/zswap/pool_total_size:0       |
+| /sys/kernel/debug/zswap/duplicate_entry:0       |
+| /sys/kernel/debug/zswap/written_back_pages:0    |
+| /sys/kernel/debug/zswap/reject_compress_poor:0  |
+| /sys/kernel/debug/zswap/reject_kmemcache_fail:0 |
+| /sys/kernel/debug/zswap/reject_alloc_fail:0     |
+| /sys/kernel/debug/zswap/reject_reclaim_fail:0   |
+| /sys/kernel/debug/zswap/pool_limit_hit:0        |
+
+
+**** Nix code
+As the explanation on a previous section of this document, the default =lz4=
+algorithm uses =LZ4_ACCELERATION_DEFAULT=1.= So just the only requirement is to
+set it the kernel parameter.
+
+#+begin_src bash
+GRUB_CMDLINE_LINUX_DEFAULT="zswap.enabled=1 zswap.compressor=lz4"
+#+end_src
+
+Below the complete code for enabling =ZSwap= on Nixos along with other parameters.
+
+#+begin_src nix
+boot.initrd = {
+    availableKernelModules = [ "lz4" "lz4_compress" "z3fold" ];
+    kernelModules = [ "lz4" "lz4_compress" "z3fold" ];
+    preDeviceCommands = ''
+    printf lz4 > /sys/module/zswap/parameters/compressor
+    printf z3fold > /sys/module/zswap/parameters/zpool
+    '';
+};
+
+boot.kernelParams = [ "zswap.enabled=1" "zswap.compressor=lz4" ];
+boot.kernelPackages = pkgs.linuxPackages.extend (lib.const (super: {
+    kernel = super.kernel.overrideDerivation (drv: {
+    nativeBuildInputs = (drv.nativeBuildInputs or [  ]) ++ [ pkgs.lz4 ];
+    });
+}));
+#+end_src
+
+**** Validate the changes
+Then after a reboot confirm the configuration changes
+
+#+begin_src bash
+cat /proc/cmdline
+#+end_src
+
+#+RESULTS:
+: initrd=\efi\nixos\pax13psm300w02m0cfcd9rhif6v75694-initrd-linux-6.1-initrd.efi init=/nix/store/18785fqmc3vv9dm67gpzld64zni5vrxn-nixos-system-markarth-23.05.20230305.dirty/init zswap.enabled=1 zswap.compressor=lz4 loglevel=4
+
+#+begin_src bash
+sudo cat /sys/module/zswap/parameters/enabled
+#+end_src
+
+#+RESULTS:
+: Y
+
+Validate the compression algorithm:
+
+#+begin_src bash
+sudo cat /sys/module/zswap/parameters/compressor
+#+end_src
+
+#+RESULTS:
+: lz4
+
+** Notes on swap
+Below a non-exhaustive list of parameters which can be tweaked for better performance.
+
+*** =compact_memory=
+Available only when CONFIG_COMPACTION is set. When 1 is written to the file, all
+zones are compacted such that free memory is available in contiguous blocks
+where possible. This can be important for example in the allocation of huge
+pages although processes will also directly compact memory as required.
+
+*** =compaction_proactiveness=
+
+This tunable takes a value in the range [0, 100] with a default value of 20.
+This tunable determines how aggressively compaction is done in the background.
+Write of a non zero value to this tunable will immediately trigger the proactive
+compaction. Setting it to 0 disables proactive compaction.
+
+Note that compaction has a non-trivial system-wide impact as pages belonging to
+different processes are moved around, which could also lead to latency spikes in
+unsuspecting applications. The kernel employs various heuristics to avoid
+wasting CPU cycles if it detects that proactive compaction is not being
+effective.
+
+Be careful when setting it to extreme values like 100, as that may cause
+excessive background compaction activity.
+
+*** =swappiness=
+
+This control is used to define the rough relative IO cost of swapping and
+filesystem paging, as a value between 0 and 200. At 100, the VM assumes equal IO
+cost and will thus apply memory pressure to the page cache and swap-backed pages
+equally; lower values signify more expensive swap IO, higher values indicates
+cheaper.
+
+Keep in mind that filesystem IO patterns under memory pressure tend to be more
+efficient than swap’s random IO. An optimal value will require experimentation
+and will also be workload-dependent.
+
+The default value is 60.
+
+For in-memory swap, like zram or zswap, as well as hybrid setups that have swap
+on faster devices than the filesystem, values beyond 100 can be considered. For
+example, if the random IO against the swap device is on average 2x faster than
+IO from the filesystem, swappiness should be 133 (x + 2x = 200, 2x = 133.33).
+
+At 0, the kernel will not initiate swap until the amount of free and file-backed
+pages is less than the high watermark in a zone.
+
+* Final benchmark
+The benchmarking methodology for modern systems is a topic of debate. Often, the
+measurement methods utilized do not accurately represent real-world usage or
+expected performance while utilizing the system.
+
+To eliminate any potential prejudices in our evaluation, we will employ two
+approaches. Firstly, a straightforward =C= script will be utilized to verify
+sequential and random access to memory regions, using a single byte at a time.
+This access will be performed by a single thread, and we will conduct
+assessments using two sets of data: low and high entropy.
+
+As a second approach, =sysbench= will be used to check read and write speed of the
+memory. The main reason for two approaches is that =sysbench= explores a synthetic
+use of memory, with data that is not as close as the usage pattern as expected.
+
+=Sysbench= uses low entropy data for reads, giving higher compression rate then
+normal usage data which can affect the tests and skew the results towards more
+performance [[https://github.com/akopytov/sysbench/blob/db694e7de2fda833e3ce5c42c2aa098865c67b12/src/tests/memory/sb_memory.c#L185][the memory is initialized with zero.]] This will exploit the
+same-filled feature on =zswap= and should be taken into consideration while
+interpreting the results. The code below was edited to remove irrelevant lines,
+unless =sysbench= is running on a system with huge pages enabled, the buffer is
+always filled with zero.
+
+#+begin_src c
+int memory_init(void)
+{
+  unsigned int i;
+  char         *s;
+  size_t       *buffer;
+
+  // ...
+  // Code omitted for breviety...
+  if (memory_scope == SB_MEM_SCOPE_GLOBAL)
+  {
+    // ...
+    memset(buffer, 0, memory_block_size);
+  }
+
+  // ...
+  // Code omitted for breviety...
+  for (i = 0; i < sb_globals.threads; i++)
+  {
+    if (memory_scope == SB_MEM_SCOPE_GLOBAL)
+      buffers[i] = buffer;
+    else
+    {
+      // ...
+      memset(buffers[i], 0, memory_block_size);
+      // ...
+    }
+  }
+  // ...
+  return 0;
+}
+#+end_src
+
+While reproducing these results, is also interesting to experiment with hogging
+95% of the memory so more swap is used. Below the command to accomplish this:
+
+#+begin_src bash
+stress-ng \
+  --vm-bytes \
+  $(awk '/MemAvailable/{printf "%d\n", $2 * 0.95;}' < /proc/meminfo)k \
+  --vm-keep -m 1
+#+end_src
+
+** Full data in RAM data
+#+begin_example
+# time ./bench 1000
+[+] Allocating 1000 MB
+[+] Initializing memory with random data
+[+] Memory initialized
+[+] Sequential Access High Entropy:   483.09 mb/s
+[+] Random Access High Entropy:       22.89 mb/s
+[+] Allocating 1000 MB
+[+] Initializing memory with low entropy data
+[+] Memory initialized
+[+] Sequential Access Low Entropy:    480.85 mb/s
+[+] Random Access Low Entropy:        23.02 mb/s
+
+real  1m50.561s
+user  1m49.807s
+sys   0m0.745s
+#+end_example
+
+** Traditional Swap
+
+#+begin_example
+# time ./bench 100000
+[+] Allocating 100000 MB
+[+] Initializing memory with random data
+[+] Memory initialized
+[+] Sequential Access High Entropy: 149.36 mb/s
+[+] Random Access High Entropy:     19.36 mb/s
+[+] Allocating 100000 MB
+[+] Initializing memory with low entropy data
+[+] Memory initialized
+[+] Sequential Access Low Entropy: 150.17 mb/s
+[+] Random Access Low Entropy:      19.60 mb/s
+
+real 249m1.489s
+user 207m38.827s
+sys  4m25.676s
+#+end_example
+
+** With ZSwap
+*** lz4 + z3fold
+
+#+begin_example
+# time ./bench 100000
+[+] Allocating 100000 MB
+[+] Initializing memory with random data
+[+] Memory initialized
+[+] Sequential Access High Entropy: 151.28 mb/s
+[+] Random Access High Entropy:     19.49 mb/s
+[+] Allocating 100000 MB
+[+] Initializing memory with low entropy data
+[+] Memory initialized
+[+] Sequential Access Low Entropy: 381.58 mb/s
+[+] Random Access Low Entropy:     19.72 mb/s
+
+real 236m21.983s
+user 207m16.326s
+sys  4m3.063s
+#+end_example
+
+*** lz4 + zbud
+
+#+begin_example
+# time ./bench 100000
+[+] Allocating 100000 MB
+[+] Initializing memory with random data
+[+] Memory initialized
+[+] Sequential Access High Entropy: 166.09 mb/s
+[+] Random Access High Entropy:     19.68 mb/s
+[+] Allocating 100000 MB
+[+] Initializing memory with low entropy data
+[+] Memory initialized
+[+] Sequential Access Low Entropy:  381.18 mb/s
+[+] Random Access Low Entropy:      19.68 mb/s
+
+real 225m49.379s
+user 206m33.178s
+sys  3m59.969s
+#+end_example
+
+*** lzo + zbud
+
+#+begin_example
+# time ./bench 100000
+[+] Allocating 100000 MB
+[+] Initializing memory with random data
+[+] Memory initialized
+[+] Sequential Access High Entropy: 169.18 mb/s
+[+] Random Access High Entropy:     19.53 mb/s
+[+] Allocating 100000 MB
+[+] Initializing memory with low entropy data
+[+] Memory initialized
+[+] Sequential Access Low Entropy:  381.07 mb/s
+[+] Random Access Low Entropy:      19.39 mb/s
+
+real 225m59.620s
+user 208m29.208s
+sys  3m58.475s
+#+end_example
+
+** Sysbench Read
+#+begin_example
+# sysbench memory --memory-block-size=4G --memory-total-size=20G --memory-oper=read run
+sysbench 1.0.20 (using system LuaJIT 2.1.0-beta3)
+
+Running the test with following options:
+Number of threads: 1
+Initializing random number generator from current time
+
+
+Running memory speed test with the following options:
+  block size: 4194304KiB
+  total size: 20480MiB
+  operation: read
+  scope: global
+
+Initializing worker threads...
+
+Threads started!
+
+Total operations: 5 (    5.02 per second)
+
+20480.00 MiB transferred (20571.87 MiB/sec)
+
+
+General statistics:
+    total time:                          0.9942s
+    total number of events:              5
+
+Latency (ms):
+         min:                                  197.70
+         avg:                                  198.82
+         max:                                  201.40
+         95th percentile:                      200.47
+         sum:                                  994.12
+
+Threads fairness:
+    events (avg/stddev):           5.0000/0.00
+    execution time (avg/stddev):   0.9941/0.00
+#+end_example
+** Sysbench Write
+#+begin_example
+# sysbench memory --memory-block-size=4G --memory-total-size=20G --memory-oper=write run
+sysbench 1.0.20 (using system LuaJIT 2.1.0-beta3)
+
+Running the test with following options:
+Number of threads: 1
+Initializing random number generator from current time
+
+
+Running memory speed test with the following options:
+  block size: 4194304KiB
+  total size: 20480MiB
+  operation: write
+  scope: global
+
+Initializing worker threads...
+
+Threads started!
+Total operations: 5 (    2.17 per second)
+
+20480.00 MiB transferred (8869.54 MiB/sec)
+
+
+General statistics:
+    total time:                          2.3077s
+    total number of events:              5
+
+Latency (ms):
+         min:                                  452.65
+         avg:                                  461.51
+         max:                                  477.72
+         95th percentile:                      475.79
+         sum:                                 2307.57
+
+Threads fairness:
+    events (avg/stddev):           5.0000/0.00
+    execution time (avg/stddev):   2.3076/0.00
+#+end_example
+** Sysbench Read with Swap
+#+begin_example
+sysbench memory --memory-block-size=64G --memory-total-size=1500G --memory-oper=read run
+sysbench 1.0.20 (using system LuaJIT 2.1.0-beta3)
+
+Running the test with following options:
+Number of threads: 1
+Initializing random number generator from current time
+
+
+Running memory speed test with the following options:
+  block size: 67108864KiB
+  total size: 1536000MiB
+  operation: read
+  scope: global
+
+Initializing worker threads...
+
+Threads started!
+
+Total operations: 1 (    0.00 per second)
+
+65536.00 MiB transferred (159.72 MiB/sec)
+
+
+General statistics:
+    total time:                          410.3168s
+    total number of events:              1
+
+Latency (ms):
+         min:                               410313.56
+         avg:                               410313.56
+         max:                               410313.56
+         95th percentile:                   100000.00
+         sum:                               410313.56
+
+Threads fairness:
+    events (avg/stddev):           1.0000/0.00
+    execution time (avg/stddev):   410.3136/0.00
+#+end_example
+** Sysbench Write with Swap
+#+begin_example
+sysbench 1.0.20 (using system LuaJIT 2.1.0-beta3)
+
+Running the test with following options:
+Number of threads: 1
+Initializing random number generator from current time
+
+
+Running memory speed test with the following options:
+  block size: 67108864KiB
+  total size: 1536000MiB
+  operation: write
+  scope: global
+
+Initializing worker threads...
+
+Threads started!
+
+Total operations: 1 (    0.00 per second)
+
+65536.00 MiB transferred (85.83 MiB/sec)
+
+
+General statistics:
+    total time:                          763.5311s
+    total number of events:              1
+
+Latency (ms):
+         min:                               763527.78
+         avg:                               763527.78
+         max:                               763527.78
+         95th percentile:                   100000.00
+         sum:                               763527.78
+
+Threads fairness:
+    events (avg/stddev):           1.0000/0.00
+    execution time (avg/stddev):   763.5278/0.00
+#+end_example
+** Sysbench Read with ZSwap
+#+begin_example
+# sysbench memory --memory-block-size=64G --memory-total-size=1500G --memory-oper=read run
+sysbench 1.0.20 (using system LuaJIT 2.1.0-beta3)
+
+Running the test with following options:
+Number of threads: 1
+Initializing random number generator from current time
+
+
+Running memory speed test with the following options:
+  block size: 67108864KiB
+  total size: 1536000MiB
+  operation: read
+  scope: global
+
+Initializing worker threads...
+
+Threads started!
+
+Total operations: 1 (    0.02 per second)
+
+65536.00 MiB transferred (1299.51 MiB/sec)
+
+
+General statistics:
+    total time:                          50.4301s
+    total number of events:              1
+
+Latency (ms):
+         min:                                50428.18
+         avg:                                50428.18
+         max:                                50428.18
+         95th percentile:                    50446.94
+         sum:                                50428.18
+
+Threads fairness:
+    events (avg/stddev):           1.0000/0.00
+    execution time (avg/stddev):   50.4282/0.00
+#+end_example
+** Sysbench Write with ZSwap
+#+begin_example
+# sysbench memory --memory-block-size=64G --memory-total-size=1500G --memory-oper=write run
+sysbench 1.0.20 (using system LuaJIT 2.1.0-beta3)
+Running the test with following options:
+Number of threads: 1
+Initializing random number generator from current time
+
+
+Running memory speed test with the following options:
+  block size: 67108864KiB
+  total size: 1536000MiB
+  operation: write
+  scope: global
+
+Initializing worker threads...
+
+Threads started!
+
+Total operations: 1 (    0.00 per second)
+
+65536.00 MiB transferred (109.19 MiB/sec)
+
+
+General statistics:
+    total time:                          600.1754s
+    total number of events:              1
+
+Latency (ms):
+         min:                               600078.36
+         avg:                               600078.36
+         max:                               600078.36
+         95th percentile:                   100000.00
+         sum:                               600078.36
+
+Threads fairness:
+    events (avg/stddev):           1.0000/0.00
+    execution time (avg/stddev):   600.0784/0.00
+#+end_example
+
+** ZSwap compression results
+To determine how much gain was obtained in terms of space, we can determine the
+difference between the expected consumption and the actual consumption in terms
+of storage.
+
+Each page is stored in memory aligned in blocks, usually with the size of 4k,
+but determined by the variable =PAGESIZE=. =ZSwap= info can be obtained from the
+=/sys/kernel/debug/zswap= directory. The main calculation is the amount of stored
+pages, multiplied by their in-memory page size, divided by the sum of all
+storage in use by ZSwap. The script below facilitates the process of determining
+the real gains:
+
+
+#+begin_src bash :results verbatin drawer
+P=$(sudo cat /sys/kernel/debug/zswap/stored_pages)
+S=$(sudo cat /sys/kernel/debug/zswap/pool_total_size)
+PZ=$(getconf PAGESIZE)
+SWZ=$(free -m | grep Swap | awk '{print $2}')
+RATIO=$(( P*PZ * 100 / S ))
+TOTAL=$(( SWZ * RATIO / 100 ))
+echo "ZSwap compression gain of ${RATIO}%, actual swap of ${SWZ}mb can hold an estimated ${TOTAL}mb."
+#+end_src
+
+#+RESULTS:
+:results:
+ZSwap compression gain of 237%, actual swap of 293014mb can hold an estimated 694443mb.
+:end:
+
+It should be noted that the presented numbers are based on estimations derived
+from a statistical approach. It is important to acknowledge that the actual
+results may differ slightly from those presented. Furthermore, it is worth
+mentioning that the workload used in this test was focused on training a
+convolutional neural network, with a relatively lower level of entropy compared
+to other tasks, such as video encoding.
+
+The impact of using a single thread for test execution has been considered.
+Future work could investigate the performance of the benchmark in a
+multi-threaded environment and compared with the performance of executing Python
+code in consideration with =GIL= (Global Interpreter Lock).
+
+In an overall the results are positive, by enabling =lz4= and =z3fold=, was possible
+to obtain 251% of the read speed for swapped pages on the best scenario, while
+keeping the same baseline on high entropy scenarios. Along with it, the storage
+capabilities of the device were expanded t o 237% as an average during the
+tests, while maintaining 80% of the actual ram speed on the best scenario, and
+30% on high entropy data sets.
+
+* Appendix
+** Benchmark software source code
+
+Compile with:
+
+#+begin_src bash
+gcc bench.c -o bench
+#+end_src
+
+It only accepts one argument, the amount of memory to be allocated for the
+benchmark.
+
+#+begin_src c :tangle bench.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+
+#define DEFAULT_MEM_SIZE 1024 // default benchmark uses 1gb
+
+/*
+ * Calculate a score which represent the throughput of data
+ * in megabytes per second. Start and End are defined in nano seconds.
+ */
+double score(unsigned long start, unsigned long end, size_t size){
+  double mbs = size / 1024 / 1024;
+  double score = end - start;
+  score = mbs / score * 1000;
+  return score;
+}
+
+/*
+ * Initialize the memory with low entropy values to exploit the compression
+ * capabilities and check the actual performance with low entropy data.
+ */
+void init_sequential(char* mem, size_t size) {
+    for (size_t i = 0; i < size; i++) {
+        mem[i] = i % 8;
+    }
+}
+
+/*
+ * Initialize the memory with random values so there are no optimisations nor
+ * any hack that can be done during the benchmark to avoid the real acecss.
+ */
+void init_random(char* mem, size_t size) {
+    for (size_t i = 0; i < size; i++) {
+        mem[i] = rand() % 256;
+    }
+}
+#pragma GCC push_options
+#pragma GCC optimize ("O0")
+/*
+ * Test the access in sequential order, exploit the speculative execution engine
+ * on the processor.
+ */
+double test_sequential_access(char* mem, size_t size) {
+    long sum = 0;
+
+    struct timespec ts;
+    timespec_get(&ts, TIME_UTC);
+    long start = ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+
+    for (size_t i = 0; i < size; i++) {
+        sum += mem[i];
+    }
+
+    timespec_get(&ts, TIME_UTC);
+    long end = ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+    return score(start, end, size);
+}
+
+/*
+ * Test the access in random order, to avoid exploiting the speculative
+ * execution engine on the processor.
+ */
+double test_random_access(char* mem, size_t size) {
+    long sum = 0;
+
+    struct timespec ts;
+    timespec_get(&ts, TIME_UTC);
+    long start = ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+
+    for (size_t i = 0; i < size; i++) {
+        sum += mem[rand() % size];
+    }
+
+    timespec_get(&ts, TIME_UTC);
+    long end = ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+    return score(start, end, size);
+}
+#pragma GCC pop_options
+
+
+int main(int argc, char **argv){
+
+    // initialize random seed
+    srand(time(NULL));
+
+    // parse command line arguments
+    size_t mem_size_mb = DEFAULT_MEM_SIZE;
+    if (argc > 1) {
+        mem_size_mb = atoi(argv[1]);
+    }
+    size_t mem_size = mem_size_mb  * 1024 * 1024;
+
+    // First round, not exploiting zram
+    printf("[+] Allocating %zu MB\n", mem_size_mb);
+    // allocate memory
+    char* mem = (char*) malloc(mem_size);
+    if (mem == NULL) {
+        fprintf(stderr, "[-] Failed to allocate memory\n");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("[+] Initializing memory with random data\n");
+    init_random(mem, mem_size);
+    printf("[+] Memory initialized\n");
+    printf("[+] Sequential Access High Entropy:\t %0.2lf mb/s \n", test_sequential_access(mem, mem_size));
+    printf("[+] Random Access High Entropy:    \t %0.2lf mb/s \n", test_random_access(mem, mem_size));
+
+    // free memory
+    free(mem);
+    mem = NULL;
+
+    // Second round, exploiting zram/zswap
+    printf("[+] Allocating %zu MB\n", mem_size_mb);
+
+    // allocate memory
+    mem = (char*) malloc(mem_size);
+    if (mem == NULL) {
+        fprintf(stderr, "[-] Failed to allocate memory\n");
+        exit(EXIT_FAILURE);
+    }
+    printf("[+] Initializing memory with low entropy data\n");
+    init_sequential(mem, mem_size);
+    printf("[+] Memory initialized\n");
+    printf("[+] Sequential Access Low Entropy: \t %0.2lf mb/s \n", test_sequential_access(mem, mem_size));
+    printf("[+] Random Access Low Entropy:     \t %0.2lf mb/s \n", test_random_access(mem, mem_size));
+
+    return EXIT_SUCCESS;
+}
+#+end_src
+* References
+- https://fixos.org/manual/nixos/stable/options.html#opt-fileSystems
+- https://github.com/NixOS/nixpkgs/blob/release-22.11/nixos/modules/tasks/encrypted-devices.nix
+- https://github.com/NixOS/nixpkgs/blob/release-22.11/nixos/modules/tasks/filesystems.nix
+- [[https://man7.org/linux/man-pages/man8/mount.8.html][mount(8) - Linux manual page]]
+- https://nixos.org/manual/nixos/stable/options.html#opt-swapDevices
+- [[https://en.wikipedia.org/wiki/IEEE_P1619][IEEE P1619 - Wikipedia]]
+- [[https://lwn.net/Articles/454795/][Transcendent memory in a nutshell {LWN.net}]]
+- [[https://www.infradead.org/~mchehab/kernel_docs/vm/frontswap.html][Frontswap — The Linux Kernel 5.10.0-rc1+ documentation]]
+- [[https://github.com/NixOS/nixpkgs/blob/08d2ac8dbc9750851a5eaae234606f22c795e503/pkgs/os-specific/linux/kernel/common-config.nix#L682][ZSwap option on Nixos Linux kernel configuration code]]

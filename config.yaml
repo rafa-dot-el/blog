@@ -1,0 +1,35 @@
+baseURL: http://example.org/
+languageCode: en-us
+title: Rafa
+theme: hermit
+author:
+  name: Rafael
+
+sectionPagesMenu: main
+params:
+  dateform        : "Jan 2, 2006"
+  dateformShort   : "Jan 2"
+  dateformNum     : "2006-01-02"
+  dateformNumTime : "2006-01-02 15:04 -0700"
+  latex: true
+  toc: true
+  alwaysShowToc: true
+  homeSubtitle: Personal blog
+  rssMessage: "Ditch social media, use RSS"
+  social:
+    github:
+      name: github
+      url: https://github.com/rafa-dot-el
+
+taxonomies:
+  tag: tags
+  category: categories
+
+privacy:
+  youtube:
+    disabled: false
+    privacyEnhanced: true
+  twitter:
+    disabled: false
+    enableDNT: true
+    simple: true

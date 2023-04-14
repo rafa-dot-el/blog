@@ -1,0 +1,94 @@
+#+title: Download Games From Archive.org
+#+Date: 2022-02-09
+#+Draft: false
+#+Tags[]: archivism rom emulation
+#+PROPERTY: header-args :eval never-export
+
+Thanks to [[https://archive.org][Archive.org]] a lot of the human history and our digital legacy is being
+preserved. Below a few snippets of code to download some of the available
+material from the website. It depends on =pup=. On nixos you can just run:
+
+#+begin_src bash
+nix-shell -p pup
+#+end_src
+
+Save the script below to any file:
+
+#+begin_src bash
+function archiveorg-download7z(){
+    local URL=$1
+    for f in $(curl ${URL} -sqL | pup 'a attr{href}' | grep -E '.7z$')
+    do
+        echo ${f}
+        if [ ! -f "${f}" ]
+        then
+            wget ${URL}/${f} --continue
+        else
+            echo Skipping file ${f} - already downloaded
+        fi
+    done
+}
+
+function archiveorg-downloadZip(){
+    local URL=$1
+    for f in $(curl ${URL} -sqL | pup 'a attr{href}' | grep -E '.zip$')
+    do
+        echo ${f}
+        if [ ! -f "${f}" ]
+        then
+            wget ${URL}/${f} --continue
+        else
+            echo Skipping file ${f} - already downloaded
+        fi
+    done
+}
+#+end_src
+
+And load it with:
+
+#+begin_src bash
+source script.sh
+#+end_src
+
+Below a list of games grouped by their system.
+
+* Games
+** Nintendo Game Cube
+Urls:
+
+ * https://archive.org/download/gamecubenaiso
+ * https://archive.org/download/gamecubenaiso/Nintendo%20-%20Gamecube
+
+*** Download
+
+#+begin_src bash
+archiveorg-download7z https://archive.org/download/gamecubenaiso
+archiveorg-download7z https://archive.org/download/gamecubenaiso/Nintendo%20-%20Gamecube
+#+end_src
+
+** Sega Dreamcast
+Url:
+ * https://archive.org/download/almstcmpltdrmcst
+
+*** Download
+#+begin_src bash
+archiveorg-download7z https://archive.org/download/almstcmpltdrmcst
+#+end_src
+
+** PC Engine and Turbo Grafx
+Url:
+ * https://archive.org/download/NEC_PC_Engine_CD-ROM2_System_and_TurboGrafx-CD_2016_Reference_Set_Redump_Validated_ROMs/roms/
+
+*** Download
+#+begin_src bash
+archiveorg-download7z https://archive.org/download/gamecubenaiso
+archiveorg-download7z https://archive.org/download/gamecubenaiso/Nintendo%20-%20Gamecube
+#+end_src
+** Sega Saturn
+Url:
+ * https://archive.org/download/SgaStrnCmplt
+
+*** Download
+#+begin_src bash
+archiveorg-download7z https://archive.org/download/SgaStrnCmplt
+#+end_src

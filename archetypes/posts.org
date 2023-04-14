@@ -1,0 +1,5 @@
+#+title: {{ replace .Name "-" " " | title }}
+#+Date: {{ .Date | time.Format "2006-01-02" }}
+#+Draft: true
+#+Tags[]: untagged
+#+PROPERTY: header-args :eval never-export

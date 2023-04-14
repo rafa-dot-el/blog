@@ -1,0 +1,16 @@
+[tool.poetry]
+name = "rafa-dot-el-blog"
+version = "0.1.0"
+description = "Rafa-dot-el blog"
+authors = ["pr9@tuta.io"]
+readme = "README.org"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+pandas = "^1.5.3"
+scikit-learn = "^1.2.2"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
