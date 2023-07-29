@@ -1,13 +1,13 @@
-#+title: Debug Gitlab With Metasploit
+#+title: Debug Gitlab CI/CD pipelines with Metasploit
 #+Date: 2023-07-28
-#+Draft: true
+#+Draft: false
 #+Tags[]: devops gitlab-ci gitlab metasploit
 #+PROPERTY: header-args :eval never-export
 
-More often than not I see people struggling with troubleshooting their
-pipelines, and more often than not the chosen way of debugging such pipelines is
-trial and error. There is a better solution for this which is more elegant and
-effective.
+Many individuals frequently encounter difficulties when troubleshooting their
+pipelines. Often, the common approach to debugging these pipelines involves
+employing a trial and error methodology. However, there exists a superior
+solution that is both more sophisticated and efficient.
 
 By injecting code in between the commands which one wishes to troubleshoot, and
 then having a full environment access along with the tools required to perform
@@ -40,7 +40,8 @@ dependencies and includes a good set of tooling which we can leverage to debug
 CI/CD pipelines.
 
 * Generate a Meterpreter payload
-Once Metasploit is installed, simply run:
+The very first step into this demonstration is to generate the binary payload
+being used. Once Metasploit is installed, simply run:
 
 #+begin_src bash
 msfvenom -p linux/x64/meterpreter_reverse_tcp LHOST=<IP> LPORT=<PORT> -f elf > meterpreter.elf
@@ -130,12 +131,10 @@ document. Add the following file to your repository, commit and push it.
 
 #+begin_src yaml
 stages:
-  - "run"
+  - run
 
 Run:
   stage: run
-  tags:
-    - shell
   script:
     - chmod +x meterpreter.elf
     - ./meterpreter.elf
