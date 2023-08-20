@@ -1,0 +1,677 @@
+#+title: Llama2 Fine Tunning Cpu
+#+Date: 2023-08-20
+#+Draft: true
+#+Tags[]: untagged
+#+PROPERTY: header-args :eval never-export
+
+dataset https://huggingface.co/datasets/knkarthick/samsum
+https://metatext.io/datasets/samsum
+
+Download:  https://github.com/facebookresearch/llama
+
+* CPU dependencies
+#+begin_src bash
+poetry add torch==2.0.0+cpu torchvision==0.15.1+cpu torchaudio==2.0.1
+#+end_src
+
+ #+begin_src toml
+[[tool.poetry.source]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/"
+secondary = true
+ #+end_src
+
+* Convert
+Determine the root
+
+#+begin_src python
+import transformers
+converter="/models/llama/convert_llama_weights_to_hf.py"
+print("/".join(transformers.__file__.split("/")[:-1])+converter)
+#+end_src
+
+#+RESULTS:
+
+
+#+begin_example
+/home/rafael/.cache/pypoetry/virtualenvs/mi-llama-bzpch5_f-py3.10/lib/python3.10/site-packages/transformers/models/llama/convert_llama_weights_to_hf.py
+#+end_example
+
+ #+begin_src bash
+poetry run python /home/rafael/.cache/pypoetry/virtualenvs/mi-llama-bZPCH5_f-py3.10/lib/python3.10/site-packages/transformers/models/llama/convert_llama_weights_to_hf.py
+ #+end_src
+
+
+#+begin_src bash
+TRANSFORM=`python -c "import transformers;print('/'.join(transformers.__file__.split('/')[:-1])+'/models/llama/convert_llama_weights_to_hf.py')"`
+python ${TRANSFORM} --input_dir models --model_size 7B --output_dir models_hf/7B
+#+end_src
+
+#+begin_src bash
+time poetry run python /home/rafael/.cache/pypoetry/virtualenvs/mi-llama-bZPCH5_f-py3.10/lib/python3.10/site-packages/transformers/models/llama/convert_llama_weights_to_hf.py --input_dir models --model_size 7B --output_dir models_hf/7B
+#+end_src
+
+
+#+begin_src bash
+# time poetry run python /home/rafael/.cache/pypoetry/virtualenvs/mi-llama-bZPCH5_f-py3.10/lib/python3.10/site-packages/transformers/models/llama/convert_llama_weights_to_hf.py --input_dir models --model_size 7B --output_dir models_hf/7B
+/home/rafael/.cache/pypoetry/virtualenvs/mi-llama-bZPCH5_f-py3.10/lib/python3.10/site-packages/bitsandbytes/cextension.py:34: UserWarning: The installed version of bitsandbytes was compiled without GPU support. 8-bit optimizers, 8-bit multiplication, and GPU quantization are unavailable.
+  warn("The installed version of bitsandbytes was compiled without GPU support. "
+/home/rafael/.cache/pypoetry/virtualenvs/mi-llama-bZPCH5_f-py3.10/lib/python3.10/site-packages/bitsandbytes/libbitsandbytes_cpu.so: undefined symbol: cadam32bit_grad_fp32
+2023-07-24 05:42:30.951570: I tensorflow/core/platform/cpu_feature_guard.cc:182] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+Fetching all parameters from the checkpoint at models/7B.
+Loading the checkpoint in a Llama model.
+Loading checkpoint shards: 100%|███████████████████████████████████████████████| 33/33 [07:26<00:00, 13.54s/it]
+Saving in the Transformers format.
+Saving a LlamaTokenizerFast to models_hf/7B.
+You are using the legacy behaviour of the <class 'transformers.models.llama.tokenization_llama.LlamaTokenizer'>. This means that tokens that come after special tokens will not be properly handled. We recommend you to read the related pull request available at https://github.com/huggingface/transformers/pull/24565
+
+real	96m19.099s
+user	0m49.255s
+sys	1m50.276s
+#+end_src
+
+#+begin_src
+#+end_src
+
+#+begin_example
+# du -sch *
+13G models
+13G models_hf
+#+end_example
+
+* Fine tune
+#+begin_src python :session llama-fine-tune
+import torch
+from transformers import LlamaForCausalLM, LlamaTokenizer
+model_id="./models_hf/7B"
+tokenizer = LlamaTokenizer.from_pretrained(model_id)
+model = LlamaForCausalLM.from_pretrained(model_id).to('cpu')
+
+#+end_src
+
+#+RESULTS:
+
+** Dataset
+#+begin_src python :session llama-fine-tune
+from pathlib import Path
+import os
+import sys
+from utils.dataset_utils import get_preprocessed_dataset
+from configs.datasets import samsum_dataset
+
+train_dataset = get_preprocessed_dataset(tokenizer, samsum_dataset, 'train')
+
+#+end_src
+
+#+RESULTS:
+
+** Evaluate base model
+#+begin_src python :session llama-fine-tune
+eval_prompt = """
+Summarize this dialog:
+A: Hi Tom, are you busy tomorrow’s afternoon?
+B: I’m pretty sure I am. What’s up?
+A: Can you go with me to the animal shelter?.
+B: What do you want to do?
+A: I want to get a puppy for my son.
+B: That will make him so happy.
+A: Yeah, we’ve discussed it many times. I think he’s ready now.
+B: That’s good. Raising a dog is a tough issue. Like having a baby ;-)
+A: I'll get him one of those little dogs.
+B: One that won't grow up too big;-)
+A: And eat too much;-))
+B: Do you know which one he would like?
+A: Oh, yes, I took him there last Monday. He showed me one that he really liked.
+B: I bet you had to drag him away.
+A: He wanted to take it home right away ;-).
+B: I wonder what he'll name it.
+A: He said he’d name it after his dead hamster – Lemmy  - he's  a great Motorhead fan :-)))
+---
+Summary:
+"""
+
+model_input = tokenizer(eval_prompt, return_tensors="pt").to("cpu")
+
+model.eval()
+with torch.no_grad():
+    print(tokenizer.decode(model.generate(**model_input, max_new_tokens=100)[0], skip_special_tokens=True))
+#+end_src
+
+** Prepare model for PEFT
+
+Let's prepare the model for Parameter Efficient Fine Tuning (PEFT):
+
+#+begin_src python :session llama-fine-tune
+model.train()
+
+def create_peft_config(model):
+    from peft import (
+        get_peft_model,
+        LoraConfig,
+        TaskType,
+        prepare_model_for_int8_training,
+    )
+    peft_config = LoraConfig(
+        task_type=TaskType.CAUSAL_LM,
+        inference_mode=False,
+        r=8,
+        lora_alpha=32,
+        lora_dropout=0.05,
+        target_modules = ["q_proj", "v_proj"]
+    )
+    # prepare int-8 model for training
+    model = prepare_model_for_int8_training(model)
+    model = get_peft_model(model, peft_config)
+    model.print_trainable_parameters()
+    return model, peft_config
+
+# create peft config
+model, lora_config = create_peft_config(model)
+#+end_src
+
+#+RESULTS:
+
+** Step 5: Define an optional profiler
+
+#+begin_src python :session llama-fine-tune
+from transformers import TrainerCallback
+from contextlib import nullcontext
+enable_profiler = True
+output_dir = "tmp/llama-output"
+
+config = {
+    'lora_config': lora_config,
+    'learning_rate': 1e-4,
+    'num_train_epochs': 1,
+    'gradient_accumulation_steps': 2,
+    'per_device_train_batch_size': 2,
+    'gradient_checkpointing': False,
+}
+
+# Set up profiler
+if enable_profiler:
+    wait, warmup, active, repeat = 1, 1, 2, 1
+    total_steps = (wait + warmup + active) * (1 + repeat)
+    schedule =  torch.profiler.schedule(wait=wait, warmup=warmup, active=active, repeat=repeat)
+    profiler = torch.profiler.profile(
+        schedule=schedule,
+        on_trace_ready=torch.profiler.tensorboard_trace_handler(f"{output_dir}/logs/tensorboard"),
+        record_shapes=True,
+        profile_memory=True,
+        with_stack=True)
+
+    class ProfilerCallback(TrainerCallback):
+        def __init__(self, profiler):
+            self.profiler = profiler
+
+        def on_step_end(self, *args, **kwargs):
+            self.profiler.step()
+
+    profiler_callback = ProfilerCallback(profiler)
+else:
+    profiler = nullcontext()
+#+end_src
+
+#+RESULTS:
+
+** Fine tune
+#+begin_src python :session llama-fine-tune
+from transformers import default_data_collator, Trainer, TrainingArguments
+# Define training args
+training_args = TrainingArguments(
+    output_dir=output_dir,
+    overwrite_output_dir=True,
+    bf16=False,  # Use BF16 if available
+    # logging strategies
+    logging_dir=f"{output_dir}/logs",
+    logging_strategy="steps",
+    logging_steps=10,
+    save_strategy="no",
+    # GPU only optim="adamw_torch_fused",
+    optim="adamw_torch",
+    max_steps=total_steps if enable_profiler else -1,
+    **{k:v for k,v in config.items() if k != 'lora_config'}
+)
+#model = torch.nn.DataParallel(model)
+with profiler:
+    # Create Trainer instance
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset,
+        data_collator=default_data_collator,
+        callbacks=[profiler_callback] if enable_profiler else [],
+    )
+    # Start training
+    trainer.train()
+
+#+end_src
+
+** Save
+#+begin_src python :session llama-fine-tune
+model.save_pretrained(output_dir)
+#+end_src
+
+And full, it will be around 26GB, given that the usage of 32bits weights.
+
+#+begin_src python :session llama-fine-tune
+torch.save(model.state_dict(), "llama-tuned.bin")
+#+end_src
+
+** Evaluation
+#+begin_src python :session llama-fine-tune
+model.eval()
+with torch.no_grad():
+    print(tokenizer.decode(model.generate(**model_input, max_new_tokens=100)[0], skip_special_tokens=True))
+
+#+end_src
+
+
+* Usage with Pytorch
+
+#+begin_src python
+import torch
+from transformers import LlamaForCausalLM, LlamaTokenizer, AutoModelForCausalLM
+
+from peft import PeftModel, PeftConfig
+base_model = AutoModelForCausalLM.from_pretrained(
+      "./models_hf/7B",
+      return_dict=True,
+      torch_dtype=torch.float16,
+      low_cpu_mem_usage=True
+    )
+model = PeftModel.from_pretrained(base_model, "./tmp/llama-output", torch_dtype=torch.float16, low_cpu_mem_usage=True)
+model = model.merge_and_unload()
+#+end_src
+
+** Publish to Hugging Faces
+
+#+begin_src python
+model.push_to_hub("rafa-dot-el/sample-llama")
+#+end_src
+
+
+** Merge
+#+begin_src python
+from peft import PeftModel, PeftConfig
+from transformers import AutoModelForCausalLM
+
+config = PeftConfig.from_pretrained("rafa-dot-el/sample-llama")
+model = AutoModelForCausalLM.from_pretrained("./models_hf/7B")
+model = PeftModel.from_pretrained(model, "rafa-dot-el/sample-llama")
+#+end_src
+
+* Run with LLaMA.CPP
+
+*Upload to HF first, or else it will fail during the conversion*, download it back from HF and then quantize:
+
+Download from HF using =convert.py= from llama.cpp
+
+Quantize:
+
+#+begin_src bash
+./quantize ./models/7B/ggml-model-f16.bin ./models/7B/ggml-model-q4_0.bin 2
+#+end_src
+
+** Convert HF model to GGML
+
+#+begin_src bash
+# python convert.py --outtype f16 --outfile converted.model /tmp/convert/
+#+end_src
+
+#+begin_example
+Loading model file /tmp/convert/pytorch_model-00001-of-00002.bin
+Loading model file /tmp/convert/pytorch_model-00001-of-00002.bin
+Loading model file /tmp/convert/pytorch_model-00002-of-00002.bin
+vocabtype: spm
+Loading vocab file /tmp/convert/tokenizer.model
+params: n_vocab:32000 n_embd:4096 n_mult:5504 n_head:32 n_layer:32
+Writing vocab...
+[  1/291] Writing tensor tok_embeddings.weight                  | size  32000 x   4096  | type UnquantizedDataType(name='F16')
+[  2/291] Writing tensor norm.weight                            | size   4096           | type UnquantizedDataType(name='F32')
+[  3/291] Writing tensor output.weight                          | size  32000 x   4096  | type UnquantizedDataType(name='F16')
+[  4/291] Writing tensor layers.0.attention.wq.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[  5/291] Writing tensor layers.0.attention.wk.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[  6/291] Writing tensor layers.0.attention.wv.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[  7/291] Writing tensor layers.0.attention.wo.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[  8/291] Writing tensor layers.0.attention_norm.weight         | size   4096           | type UnquantizedDataType(name='F32')
+[  9/291] Writing tensor layers.0.feed_forward.w1.weight        | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[ 10/291] Writing tensor layers.0.feed_forward.w2.weight        | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[ 11/291] Writing tensor layers.0.feed_forward.w3.weight        | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[ 12/291] Writing tensor layers.0.ffn_norm.weight               | size   4096           | type UnquantizedDataType(name='F32')
+[ 13/291] Writing tensor layers.1.attention.wq.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 14/291] Writing tensor layers.1.attention.wk.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 15/291] Writing tensor layers.1.attention.wv.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 16/291] Writing tensor layers.1.attention.wo.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 17/291] Writing tensor layers.1.attention_norm.weight         | size   4096           | type UnquantizedDataType(name='F32')
+[ 18/291] Writing tensor layers.1.feed_forward.w1.weight        | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[ 19/291] Writing tensor layers.1.feed_forward.w2.weight        | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[ 20/291] Writing tensor layers.1.feed_forward.w3.weight        | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[ 21/291] Writing tensor layers.1.ffn_norm.weight               | size   4096           | type UnquantizedDataType(name='F32')
+[ 22/291] Writing tensor layers.2.attention.wq.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 23/291] Writing tensor layers.2.attention.wk.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 24/291] Writing tensor layers.2.attention.wv.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 25/291] Writing tensor layers.2.attention.wo.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 26/291] Writing tensor layers.2.attention_norm.weight         | size   4096           | type UnquantizedDataType(name='F32')
+[ 27/291] Writing tensor layers.2.feed_forward.w1.weight        | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[ 28/291] Writing tensor layers.2.feed_forward.w2.weight        | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[ 29/291] Writing tensor layers.2.feed_forward.w3.weight        | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[ 30/291] Writing tensor layers.2.ffn_norm.weight               | size   4096           | type UnquantizedDataType(name='F32')
+[ 31/291] Writing tensor layers.3.attention.wq.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 32/291] Writing tensor layers.3.attention.wk.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 33/291] Writing tensor layers.3.attention.wv.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 34/291] Writing tensor layers.3.attention.wo.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 35/291] Writing tensor layers.3.attention_norm.weight         | size   4096           | type UnquantizedDataType(name='F32')
+[ 36/291] Writing tensor layers.3.feed_forward.w1.weight        | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[ 37/291] Writing tensor layers.3.feed_forward.w2.weight        | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[ 38/291] Writing tensor layers.3.feed_forward.w3.weight        | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[ 39/291] Writing tensor layers.3.ffn_norm.weight               | size   4096           | type UnquantizedDataType(name='F32')
+[ 40/291] Writing tensor layers.4.attention.wq.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 41/291] Writing tensor layers.4.attention.wk.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 42/291] Writing tensor layers.4.attention.wv.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 43/291] Writing tensor layers.4.attention.wo.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 44/291] Writing tensor layers.4.attention_norm.weight         | size   4096           | type UnquantizedDataType(name='F32')
+[ 45/291] Writing tensor layers.4.feed_forward.w1.weight        | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[ 46/291] Writing tensor layers.4.feed_forward.w2.weight        | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[ 47/291] Writing tensor layers.4.feed_forward.w3.weight        | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[ 48/291] Writing tensor layers.4.ffn_norm.weight               | size   4096           | type UnquantizedDataType(name='F32')
+[ 49/291] Writing tensor layers.5.attention.wq.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 50/291] Writing tensor layers.5.attention.wk.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 51/291] Writing tensor layers.5.attention.wv.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 52/291] Writing tensor layers.5.attention.wo.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 53/291] Writing tensor layers.5.attention_norm.weight         | size   4096           | type UnquantizedDataType(name='F32')
+[ 54/291] Writing tensor layers.5.feed_forward.w1.weight        | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[ 55/291] Writing tensor layers.5.feed_forward.w2.weight        | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[ 56/291] Writing tensor layers.5.feed_forward.w3.weight        | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[ 57/291] Writing tensor layers.5.ffn_norm.weight               | size   4096           | type UnquantizedDataType(name='F32')
+[ 58/291] Writing tensor layers.6.attention.wq.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 59/291] Writing tensor layers.6.attention.wk.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 60/291] Writing tensor layers.6.attention.wv.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 61/291] Writing tensor layers.6.attention.wo.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 62/291] Writing tensor layers.6.attention_norm.weight         | size   4096           | type UnquantizedDataType(name='F32')
+[ 63/291] Writing tensor layers.6.feed_forward.w1.weight        | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[ 64/291] Writing tensor layers.6.feed_forward.w2.weight        | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[ 65/291] Writing tensor layers.6.feed_forward.w3.weight        | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[ 66/291] Writing tensor layers.6.ffn_norm.weight               | size   4096           | type UnquantizedDataType(name='F32')
+[ 67/291] Writing tensor layers.7.attention.wq.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 68/291] Writing tensor layers.7.attention.wk.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 69/291] Writing tensor layers.7.attention.wv.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 70/291] Writing tensor layers.7.attention.wo.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 71/291] Writing tensor layers.7.attention_norm.weight         | size   4096           | type UnquantizedDataType(name='F32')
+[ 72/291] Writing tensor layers.7.feed_forward.w1.weight        | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[ 73/291] Writing tensor layers.7.feed_forward.w2.weight        | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[ 74/291] Writing tensor layers.7.feed_forward.w3.weight        | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[ 75/291] Writing tensor layers.7.ffn_norm.weight               | size   4096           | type UnquantizedDataType(name='F32')
+[ 76/291] Writing tensor layers.8.attention.wq.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 77/291] Writing tensor layers.8.attention.wk.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 78/291] Writing tensor layers.8.attention.wv.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 79/291] Writing tensor layers.8.attention.wo.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 80/291] Writing tensor layers.8.attention_norm.weight         | size   4096           | type UnquantizedDataType(name='F32')
+[ 81/291] Writing tensor layers.8.feed_forward.w1.weight        | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[ 82/291] Writing tensor layers.8.feed_forward.w2.weight        | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[ 83/291] Writing tensor layers.8.feed_forward.w3.weight        | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[ 84/291] Writing tensor layers.8.ffn_norm.weight               | size   4096           | type UnquantizedDataType(name='F32')
+[ 85/291] Writing tensor layers.9.attention.wq.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 86/291] Writing tensor layers.9.attention.wk.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 87/291] Writing tensor layers.9.attention.wv.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 88/291] Writing tensor layers.9.attention.wo.weight           | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 89/291] Writing tensor layers.9.attention_norm.weight         | size   4096           | type UnquantizedDataType(name='F32')
+[ 90/291] Writing tensor layers.9.feed_forward.w1.weight        | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[ 91/291] Writing tensor layers.9.feed_forward.w2.weight        | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[ 92/291] Writing tensor layers.9.feed_forward.w3.weight        | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[ 93/291] Writing tensor layers.9.ffn_norm.weight               | size   4096           | type UnquantizedDataType(name='F32')
+[ 94/291] Writing tensor layers.10.attention.wq.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 95/291] Writing tensor layers.10.attention.wk.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 96/291] Writing tensor layers.10.attention.wv.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 97/291] Writing tensor layers.10.attention.wo.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[ 98/291] Writing tensor layers.10.attention_norm.weight        | size   4096           | type UnquantizedDataType(name='F32')
+[ 99/291] Writing tensor layers.10.feed_forward.w1.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[100/291] Writing tensor layers.10.feed_forward.w2.weight       | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[101/291] Writing tensor layers.10.feed_forward.w3.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[102/291] Writing tensor layers.10.ffn_norm.weight              | size   4096           | type UnquantizedDataType(name='F32')
+[103/291] Writing tensor layers.11.attention.wq.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[104/291] Writing tensor layers.11.attention.wk.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[105/291] Writing tensor layers.11.attention.wv.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[106/291] Writing tensor layers.11.attention.wo.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[107/291] Writing tensor layers.11.attention_norm.weight        | size   4096           | type UnquantizedDataType(name='F32')
+[108/291] Writing tensor layers.11.feed_forward.w1.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[109/291] Writing tensor layers.11.feed_forward.w2.weight       | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[110/291] Writing tensor layers.11.feed_forward.w3.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[111/291] Writing tensor layers.11.ffn_norm.weight              | size   4096           | type UnquantizedDataType(name='F32')
+[112/291] Writing tensor layers.12.attention.wq.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[113/291] Writing tensor layers.12.attention.wk.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[114/291] Writing tensor layers.12.attention.wv.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[115/291] Writing tensor layers.12.attention.wo.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[116/291] Writing tensor layers.12.attention_norm.weight        | size   4096           | type UnquantizedDataType(name='F32')
+[117/291] Writing tensor layers.12.feed_forward.w1.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[118/291] Writing tensor layers.12.feed_forward.w2.weight       | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[119/291] Writing tensor layers.12.feed_forward.w3.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[120/291] Writing tensor layers.12.ffn_norm.weight              | size   4096           | type UnquantizedDataType(name='F32')
+[121/291] Writing tensor layers.13.attention.wq.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[122/291] Writing tensor layers.13.attention.wk.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[123/291] Writing tensor layers.13.attention.wv.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[124/291] Writing tensor layers.13.attention.wo.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[125/291] Writing tensor layers.13.attention_norm.weight        | size   4096           | type UnquantizedDataType(name='F32')
+[126/291] Writing tensor layers.13.feed_forward.w1.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[127/291] Writing tensor layers.13.feed_forward.w2.weight       | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[128/291] Writing tensor layers.13.feed_forward.w3.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[129/291] Writing tensor layers.13.ffn_norm.weight              | size   4096           | type UnquantizedDataType(name='F32')
+[130/291] Writing tensor layers.14.attention.wq.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[131/291] Writing tensor layers.14.attention.wk.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[132/291] Writing tensor layers.14.attention.wv.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[133/291] Writing tensor layers.14.attention.wo.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[134/291] Writing tensor layers.14.attention_norm.weight        | size   4096           | type UnquantizedDataType(name='F32')
+[135/291] Writing tensor layers.14.feed_forward.w1.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[136/291] Writing tensor layers.14.feed_forward.w2.weight       | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[137/291] Writing tensor layers.14.feed_forward.w3.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[138/291] Writing tensor layers.14.ffn_norm.weight              | size   4096           | type UnquantizedDataType(name='F32')
+[139/291] Writing tensor layers.15.attention.wq.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[140/291] Writing tensor layers.15.attention.wk.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[141/291] Writing tensor layers.15.attention.wv.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[142/291] Writing tensor layers.15.attention.wo.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[143/291] Writing tensor layers.15.attention_norm.weight        | size   4096           | type UnquantizedDataType(name='F32')
+[144/291] Writing tensor layers.15.feed_forward.w1.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[145/291] Writing tensor layers.15.feed_forward.w2.weight       | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[146/291] Writing tensor layers.15.feed_forward.w3.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[147/291] Writing tensor layers.15.ffn_norm.weight              | size   4096           | type UnquantizedDataType(name='F32')
+[148/291] Writing tensor layers.16.attention.wq.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[149/291] Writing tensor layers.16.attention.wk.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[150/291] Writing tensor layers.16.attention.wv.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[151/291] Writing tensor layers.16.attention.wo.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[152/291] Writing tensor layers.16.attention_norm.weight        | size   4096           | type UnquantizedDataType(name='F32')
+[153/291] Writing tensor layers.16.feed_forward.w1.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[154/291] Writing tensor layers.16.feed_forward.w2.weight       | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[155/291] Writing tensor layers.16.feed_forward.w3.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[156/291] Writing tensor layers.16.ffn_norm.weight              | size   4096           | type UnquantizedDataType(name='F32')
+[157/291] Writing tensor layers.17.attention.wq.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[158/291] Writing tensor layers.17.attention.wk.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[159/291] Writing tensor layers.17.attention.wv.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[160/291] Writing tensor layers.17.attention.wo.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[161/291] Writing tensor layers.17.attention_norm.weight        | size   4096           | type UnquantizedDataType(name='F32')
+[162/291] Writing tensor layers.17.feed_forward.w1.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[163/291] Writing tensor layers.17.feed_forward.w2.weight       | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[164/291] Writing tensor layers.17.feed_forward.w3.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[165/291] Writing tensor layers.17.ffn_norm.weight              | size   4096           | type UnquantizedDataType(name='F32')
+[166/291] Writing tensor layers.18.attention.wq.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[167/291] Writing tensor layers.18.attention.wk.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[168/291] Writing tensor layers.18.attention.wv.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[169/291] Writing tensor layers.18.attention.wo.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[170/291] Writing tensor layers.18.attention_norm.weight        | size   4096           | type UnquantizedDataType(name='F32')
+[171/291] Writing tensor layers.18.feed_forward.w1.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[172/291] Writing tensor layers.18.feed_forward.w2.weight       | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[173/291] Writing tensor layers.18.feed_forward.w3.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[174/291] Writing tensor layers.18.ffn_norm.weight              | size   4096           | type UnquantizedDataType(name='F32')
+[175/291] Writing tensor layers.19.attention.wq.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[176/291] Writing tensor layers.19.attention.wk.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[177/291] Writing tensor layers.19.attention.wv.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[178/291] Writing tensor layers.19.attention.wo.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[179/291] Writing tensor layers.19.attention_norm.weight        | size   4096           | type UnquantizedDataType(name='F32')
+[180/291] Writing tensor layers.19.feed_forward.w1.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[181/291] Writing tensor layers.19.feed_forward.w2.weight       | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[182/291] Writing tensor layers.19.feed_forward.w3.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[183/291] Writing tensor layers.19.ffn_norm.weight              | size   4096           | type UnquantizedDataType(name='F32')
+[184/291] Writing tensor layers.20.attention.wq.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[185/291] Writing tensor layers.20.attention.wk.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[186/291] Writing tensor layers.20.attention.wv.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[187/291] Writing tensor layers.20.attention.wo.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[188/291] Writing tensor layers.20.attention_norm.weight        | size   4096           | type UnquantizedDataType(name='F32')
+[189/291] Writing tensor layers.20.feed_forward.w1.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[190/291] Writing tensor layers.20.feed_forward.w2.weight       | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[191/291] Writing tensor layers.20.feed_forward.w3.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[192/291] Writing tensor layers.20.ffn_norm.weight              | size   4096           | type UnquantizedDataType(name='F32')
+[193/291] Writing tensor layers.21.attention.wq.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[194/291] Writing tensor layers.21.attention.wk.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[195/291] Writing tensor layers.21.attention.wv.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[196/291] Writing tensor layers.21.attention.wo.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[197/291] Writing tensor layers.21.attention_norm.weight        | size   4096           | type UnquantizedDataType(name='F32')
+[198/291] Writing tensor layers.21.feed_forward.w1.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[199/291] Writing tensor layers.21.feed_forward.w2.weight       | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[200/291] Writing tensor layers.21.feed_forward.w3.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[201/291] Writing tensor layers.21.ffn_norm.weight              | size   4096           | type UnquantizedDataType(name='F32')
+[202/291] Writing tensor layers.22.attention.wq.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[203/291] Writing tensor layers.22.attention.wk.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[204/291] Writing tensor layers.22.attention.wv.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[205/291] Writing tensor layers.22.attention.wo.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[206/291] Writing tensor layers.22.attention_norm.weight        | size   4096           | type UnquantizedDataType(name='F32')
+[207/291] Writing tensor layers.22.feed_forward.w1.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[208/291] Writing tensor layers.22.feed_forward.w2.weight       | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[209/291] Writing tensor layers.22.feed_forward.w3.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[210/291] Writing tensor layers.22.ffn_norm.weight              | size   4096           | type UnquantizedDataType(name='F32')
+[211/291] Writing tensor layers.23.attention.wq.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[212/291] Writing tensor layers.23.attention.wk.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[213/291] Writing tensor layers.23.attention.wv.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[214/291] Writing tensor layers.23.attention.wo.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[215/291] Writing tensor layers.23.attention_norm.weight        | size   4096           | type UnquantizedDataType(name='F32')
+[216/291] Writing tensor layers.23.feed_forward.w1.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[217/291] Writing tensor layers.23.feed_forward.w2.weight       | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[218/291] Writing tensor layers.23.feed_forward.w3.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[219/291] Writing tensor layers.23.ffn_norm.weight              | size   4096           | type UnquantizedDataType(name='F32')
+[220/291] Writing tensor layers.24.attention.wq.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[221/291] Writing tensor layers.24.attention.wk.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[222/291] Writing tensor layers.24.attention.wv.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[223/291] Writing tensor layers.24.attention.wo.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[224/291] Writing tensor layers.24.attention_norm.weight        | size   4096           | type UnquantizedDataType(name='F32')
+[225/291] Writing tensor layers.24.feed_forward.w1.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[226/291] Writing tensor layers.24.feed_forward.w2.weight       | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[227/291] Writing tensor layers.24.feed_forward.w3.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[228/291] Writing tensor layers.24.ffn_norm.weight              | size   4096           | type UnquantizedDataType(name='F32')
+[229/291] Writing tensor layers.25.attention.wq.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[230/291] Writing tensor layers.25.attention.wk.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[231/291] Writing tensor layers.25.attention.wv.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[232/291] Writing tensor layers.25.attention.wo.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[233/291] Writing tensor layers.25.attention_norm.weight        | size   4096           | type UnquantizedDataType(name='F32')
+[234/291] Writing tensor layers.25.feed_forward.w1.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[235/291] Writing tensor layers.25.feed_forward.w2.weight       | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[236/291] Writing tensor layers.25.feed_forward.w3.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[237/291] Writing tensor layers.25.ffn_norm.weight              | size   4096           | type UnquantizedDataType(name='F32')
+[238/291] Writing tensor layers.26.attention.wq.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[239/291] Writing tensor layers.26.attention.wk.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[240/291] Writing tensor layers.26.attention.wv.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[241/291] Writing tensor layers.26.attention.wo.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[242/291] Writing tensor layers.26.attention_norm.weight        | size   4096           | type UnquantizedDataType(name='F32')
+[243/291] Writing tensor layers.26.feed_forward.w1.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[244/291] Writing tensor layers.26.feed_forward.w2.weight       | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[245/291] Writing tensor layers.26.feed_forward.w3.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[246/291] Writing tensor layers.26.ffn_norm.weight              | size   4096           | type UnquantizedDataType(name='F32')
+[247/291] Writing tensor layers.27.attention.wq.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[248/291] Writing tensor layers.27.attention.wk.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[249/291] Writing tensor layers.27.attention.wv.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[250/291] Writing tensor layers.27.attention.wo.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[251/291] Writing tensor layers.27.attention_norm.weight        | size   4096           | type UnquantizedDataType(name='F32')
+[252/291] Writing tensor layers.27.feed_forward.w1.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[253/291] Writing tensor layers.27.feed_forward.w2.weight       | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[254/291] Writing tensor layers.27.feed_forward.w3.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[255/291] Writing tensor layers.27.ffn_norm.weight              | size   4096           | type UnquantizedDataType(name='F32')
+[256/291] Writing tensor layers.28.attention.wq.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[257/291] Writing tensor layers.28.attention.wk.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[258/291] Writing tensor layers.28.attention.wv.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[259/291] Writing tensor layers.28.attention.wo.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[260/291] Writing tensor layers.28.attention_norm.weight        | size   4096           | type UnquantizedDataType(name='F32')
+[261/291] Writing tensor layers.28.feed_forward.w1.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[262/291] Writing tensor layers.28.feed_forward.w2.weight       | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[263/291] Writing tensor layers.28.feed_forward.w3.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[264/291] Writing tensor layers.28.ffn_norm.weight              | size   4096           | type UnquantizedDataType(name='F32')
+[265/291] Writing tensor layers.29.attention.wq.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[266/291] Writing tensor layers.29.attention.wk.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[267/291] Writing tensor layers.29.attention.wv.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[268/291] Writing tensor layers.29.attention.wo.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[269/291] Writing tensor layers.29.attention_norm.weight        | size   4096           | type UnquantizedDataType(name='F32')
+[270/291] Writing tensor layers.29.feed_forward.w1.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[271/291] Writing tensor layers.29.feed_forward.w2.weight       | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[272/291] Writing tensor layers.29.feed_forward.w3.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[273/291] Writing tensor layers.29.ffn_norm.weight              | size   4096           | type UnquantizedDataType(name='F32')
+[274/291] Writing tensor layers.30.attention.wq.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[275/291] Writing tensor layers.30.attention.wk.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[276/291] Writing tensor layers.30.attention.wv.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[277/291] Writing tensor layers.30.attention.wo.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[278/291] Writing tensor layers.30.attention_norm.weight        | size   4096           | type UnquantizedDataType(name='F32')
+[279/291] Writing tensor layers.30.feed_forward.w1.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[280/291] Writing tensor layers.30.feed_forward.w2.weight       | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[281/291] Writing tensor layers.30.feed_forward.w3.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[282/291] Writing tensor layers.30.ffn_norm.weight              | size   4096           | type UnquantizedDataType(name='F32')
+[283/291] Writing tensor layers.31.attention.wq.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[284/291] Writing tensor layers.31.attention.wk.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[285/291] Writing tensor layers.31.attention.wv.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[286/291] Writing tensor layers.31.attention.wo.weight          | size   4096 x   4096  | type UnquantizedDataType(name='F16')
+[287/291] Writing tensor layers.31.attention_norm.weight        | size   4096           | type UnquantizedDataType(name='F32')
+[288/291] Writing tensor layers.31.feed_forward.w1.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[289/291] Writing tensor layers.31.feed_forward.w2.weight       | size   4096 x  11008  | type UnquantizedDataType(name='F16')
+[290/291] Writing tensor layers.31.feed_forward.w3.weight       | size  11008 x   4096  | type UnquantizedDataType(name='F16')
+[291/291] Writing tensor layers.31.ffn_norm.weight              | size   4096           | type UnquantizedDataType(name='F32')
+Wrote converted.model
+#+end_example
+** Run with LLaMA.cpp
+
+#+begin_src bash
+./main -m converted.model -n 256 --repeat_penalty 1.0 --color -i -r "User: " -f prompts/summary.txt --numa -t 16
+#+end_src
+
+* TODO Consider measuring
+Consider converting the model to 16 bits and check for any loss of precision
+#+begin_src python :session llama-fine-tune
+model = model.half()
+#+end_src
+
+* Appendix
+** =pyproject.toml=
+#+begin_src toml
+[tool.poetry]
+name = "mi-llama"
+version = "0.1.0"
+description = ""
+authors = ["Rafael <pr9@tuta.io>"]
+readme = "README.org"
+packages = [{include = "mi_llama"}]
+
+[tool.poetry.dependencies]
+python = ">3.9,<3.12"
+transformers = "^4.31.0"
+datasets = "^2.13.1"
+accelerate = "^0.21.0"
+sentencepiece = "^0.1.99"
+protobuf = "3.20.3"
+py7zr = "^0.20.5"
+scipy = "^1.11.1"
+peft = "^0.4.0"
+bitsandbytes = "^0.40.2"
+fire = "^0.5.0"
+torch-tb-profiler = "^0.4.1"
+ipywidgets = "^8.0.7"
+tensorflow-cpu = "^2.13.0"
+torch = "2.0.0+cpu"
+torchvision = "0.15.1+cpu"
+torchaudio = "2.0.1"
+ebooklib = "^0.18"
+bs4 = "^0.0.1"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[[tool.poetry.source]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/"
+secondary = true
+#+end_src
