@@ -1,0 +1,655 @@
+#+title: Debugging an Emacs segfault
+#+Date: 2023-12-16
+#+Draft: false
+#+Tags[]: emacs
+#+PROPERTY: header-args :eval never-export
+
+During an attempt to install [[https://github.com/minad/jinx][Jinx]], my Emacs broke. In this attempt I tried to
+update the system, Emacs, and Doom Emacs, to try to fix the issue, but it
+created a new one. The resulting error was not clear, just a segmentation fault,
+and here I will try to walk through the thought process of debugging it.
+
+I isolated the issue by removing Doom Emacs, and the problem went away. The next
+attempt was with a fresh install of Doom Emacs, the same problem returned. It
+was tested and the same results were obtained with Emacs 28.1, 28.2 and 29.1.
+
+* A naive attempt
+My first attempt to try to determine a possible cause for this was to compile
+Emacs with the debugging symbols required for a better understanding of the
+situation. When using =nix= this can be accomplished with:
+
+#+begin_src bash
+nix-build -E 'with import <nixpkgs> {}; enableDebugging emacs29-gtk3'
+#+end_src
+
+This will generate an output folder named =result= in which the binaries of Emacs
+will be located:
+
+#+begin_src bash
+./result/bin/emacs-29.1 --debug-init
+#+end_src
+
+#+begin_example
+Loading /home/rafael/.emacs.d/lisp/doom.el (source)...
+Loading /home/rafael/.emacs.d/lisp/doom.el (source)...done
+ 0.022212:*:load: doom-start nil
+ 0.027026:*:hook:doom-before-init-hook: run doom--begin-init-h
+ 0.027076::context: +init (t)
+ 0.027440:*:init:load: ~/.doom.d/init t
+Fatal error 11: Segmentation fault
+Backtrace:
+./result/bin/emacs-29.1(emacs_backtrace+0x46)[0x585a5e]
+./result/bin/emacs-29.1(terminate_due_to_signal+0x9c)[0x567eb3]
+./result/bin/emacs-29.1[0x583792]
+./result/bin/emacs-29.1[0x5837bf]
+./result/bin/emacs-29.1[0x583823]
+./result/bin/emacs-29.1[0x583912]
+/nix/store/9y8pmvk8gdwwznmkzxa6pwyah52xy3nk-glibc-2.38-27/lib/libc.so.6(+0x3da70)[0x7f6a386fda70]
+./result/bin/emacs-29.1(lookup_image+0x81)[0x675dca]
+./result/bin/emacs-29.1[0x49df99]
+./result/bin/emacs-29.1[0x49e2cb]
+./result/bin/emacs-29.1[0x49e926]
+./result/bin/emacs-29.1[0x49918c]
+./result/bin/emacs-29.1[0x4a16f3]
+./result/bin/emacs-29.1[0x49ffa9]
+./result/bin/emacs-29.1[0x4a7592]
+./result/bin/emacs-29.1(try_window+0xe0)[0x4aabfa]
+./result/bin/emacs-29.1[0x4c0b22]
+./result/bin/emacs-29.1[0x4c2c3f]
+./result/bin/emacs-29.1(internal_condition_case_1+0x63)[0x5e2b68]
+./result/bin/emacs-29.1[0x48b9d8]
+./result/bin/emacs-29.1[0x48b95d]
+./result/bin/emacs-29.1[0x4b2db4]
+./result/bin/emacs-29.1(redisplay_preserve_echo_area+0xb0)[0x4b3616]
+./result/bin/emacs-29.1(Fredisplay+0x6b)[0x47208f]
+/nix/store/kshwj88iz6xkhsyhkw745x6ivghfx44d-emacs-gtk3-29.1/bin/../lib/emacs/29.1/native-lisp/29.1-4ebe15f7/preloaded/subr-13adf6a6-b5d2bdc1.eln(F7369742d666f72_sit_for_0+0x138)[0x7f6a3213b1e8]
+./result/bin/emacs-29.1(funcall_subr+0xdb)[0x5e5194]
+./result/bin/emacs-29.1(funcall_general+0x1b4)[0x5e6ad7]
+./result/bin/emacs-29.1(Ffuncall+0xc2)[0x5e3b5c]
+/nix/store/kshwj88iz6xkhsyhkw745x6ivghfx44d-emacs-gtk3-29.1/lib/emacs/29.1/native-lisp/29.1-4ebe15f7/warnings-2
+8e75f4d-9f48f568.eln(F646973706c61792d7761726e696e67_display_warning_0+0xa19)[0x7f6a20c3c389]
+./result/bin/emacs-29.1(funcall_subr+0xf5)[0x5e51ae]
+./result/bin/emacs-29.1(exec_byte_code+0x7e2)[0x619514]
+./result/bin/emacs-29.1[0x5e4b69]
+./result/bin/emacs-29.1[0x5e66f2]
+./result/bin/emacs-29.1(funcall_general+0x1c4)[0x5e6ae7]
+./result/bin/emacs-29.1(Ffuncall+0xc2)[0x5e3b5c]
+./result/bin/emacs-29.1(Fapply+0x2a4)[0x5e3ef4]
+./result/bin/emacs-29.1(apply1+0x3c)[0x5e3f62]
+./result/bin/emacs-29.1[0x625836]
+./result/bin/emacs-29.1(internal_condition_case_1+0x63)[0x5e2b68]
+./result/bin/emacs-29.1[0x6260f5]
+./result/bin/emacs-29.1[0x62966a]
+...
+Segmentation fault (core dumped)
+#+end_example
+
+The above output doesn't give that much information about the cause or possible
+location of the error.
+
+** Debug
+A next step is to debug the current binary with =gdb= and try to collect more
+insights on the situation. On =NixOS= segmentation faults trigger a =coredump= which
+is handled by =coredumpctl=.
+
+First we list the last =coredump=:
+
+#+begin_src bash
+coredumpctl list -1 --json=pretty
+#+end_src
+
+And we get the following output:
+
+#+begin_src json
+[
+        {
+                "time" : 1702648768467115,
+                "pid" : 1917731,
+                "uid" : 1002,
+                "gid" : 100,
+                "sig" : 11,
+                "corefile" : "present",
+                "exe" : "/nix/store/kshwj88iz6xkhsyhkw745x6ivghfx44d-emacs-gtk3-29.1/bin/.emacs-29.1-wrapped",
+                "size" : 63850863
+        }
+]
+#+end_src
+
+With this we have enough information to debug out current =coredump=, for this =gdb=
+is required to be installed.
+
+#+begin_src bash
+coredumpctl debug /nix/store/kshwj88iz6xkhsyhkw745x6ivghfx44d-emacs-gtk3-29.1/bin/.emacs-29.1-wrapped
+#+end_src
+
+After this an =gdb= session is launched and a prompt will be presented, the
+backtrace of execution can be explored with =bt=.
+
+#+begin_example
+(gdb) bt
+#0  0x00007f4e75f4cd7c in __pthread_kill_implementation ()
+   from /nix/store/qn3ggz5sf3hkjs2c797xf7nan3amdxmp-glibc-2.38-27/lib/libc.so.6
+#1  0x00007f4e75efd9c6 in raise ()
+   from /nix/store/qn3ggz5sf3hkjs2c797xf7nan3amdxmp-glibc-2.38-27/lib/libc.so.6
+#2  0x000000000046f5c9 in terminate_due_to_signal ()
+#3  0x000000000046fafd in handle_fatal_signal ()
+#4  0x00000000005c9938 in deliver_thread_signal.constprop ()
+#5  0x00000000005c99bc in handle_sigsegv ()
+#6  <signal handler called>
+#7  0x0000000000496749 in normal_char_ascent_descent ()
+#8  0x00000000004af1c9 in handle_single_display_spec ()
+#9  0x00000000004aff01 in handle_display_spec ()
+#10 0x00000000004b0980 in handle_display_prop ()
+#11 0x00000000004aab96 in handle_stop ()
+#12 0x00000000004ac1ec in next_element_from_string ()
+#13 0x00000000004b25c4 in get_next_display_element ()
+#14 0x00000000004c32e8 in display_string ()
+#15 0x00000000004c3d6d in display_mode_element ()
+#16 0x00000000004c39ed in display_mode_element ()
+#17 0x00000000004c535c in display_mode_element ()
+#18 0x00000000004c535c in display_mode_element ()
+#19 0x00000000004c39ed in display_mode_element ()
+#20 0x00000000004c535c in display_mode_element ()
+#21 0x00000000004c6f20 in display_mode_line ()
+#22 0x00000000004c9295 in display_mode_lines ()
+#23 0x00000000004c94cb in redisplay_mode_lines ()
+#24 0x00000000004c9a4b in echo_area_display ()
+#25 0x00000000004cbd39 in message3_nolog ()
+#26 0x00000000004cc020 in message3 ()
+#27 0x0000000000632755 in Fmessage ()
+#28 0x000000000063a731 in Ffuncall ()
+#29 0x000000000063e4f2 in eval_sub ()
+#30 0x000000000063e91d in Fprogn ()
+#31 0x000000000063eedd in funcall_lambda ()
+#32 0x000000000063a731 in Ffuncall ()
+#+end_example
+
+Dropping the frame for the first one which seems related to Emacs code will give
+
+#+begin_example
+#7  0x0000000000496749 in normal_char_ascent_descent ()
+#+end_example
+
+And then disassembling the function:
+
+#+begin_example
+(gdb) frame 7
+#7  0x0000000000496749 in normal_char_ascent_descent ()
+(gdb) disas
+Dump of assembler code for function normal_char_ascent_descent:
+   0x0000000000496730 <+0>:	push   %r12
+   0x0000000000496732 <+2>:	mov    %rdx,%r12
+   0x0000000000496735 <+5>:	push   %rbp
+   0x0000000000496736 <+6>:	push   %rbx
+   0x0000000000496737 <+7>:	sub    $0x10,%rsp
+   0x000000000049673b <+11>:	mov    %fs:0x28,%rax
+   0x0000000000496744 <+20>:	mov    %rax,0x8(%rsp)
+=> 0x0000000000496749 <+25>:	mov    0xa8(%rdi),%eax
+   0x000000000049674f <+31>:	mov    %eax,(%rdx)
+   0x0000000000496751 <+33>:	mov    0xac(%rdi),%eax
+   0x0000000000496757 <+39>:	mov    %eax,(%rcx)
+   0x0000000000496759 <+41>:	mov    0x98(%rdi),%edx
+   0x000000000049675f <+47>:	test   %edx,%edx
+   0x0000000000496761 <+49>:	jle    0x4967d0 <normal_char_ascent_descent+160>
+   0x0000000000496763 <+51>:	add    0xa8(%rdi),%eax
+   0x0000000000496769 <+57>:	lea    (%rdx,%rdx,2),%edx
+   0x000000000049676c <+60>:	mov    %rdi,%rbx
+   0x000000000049676f <+63>:	cmp    %edx,%eax
+   0x0000000000496771 <+65>:	jle    0x4967d0 <normal_char_ascent_descent+160>
+   0x0000000000496773 <+67>:	cmp    $0xffffffff,%esi
+   0x0000000000496776 <+70>:	mov    $0x7b,%eax
+   0x000000000049677b <+75>:	mov    %rcx,%rbp
+   0x000000000049677e <+78>:	cmove  %eax,%esi
+   0x0000000000496781 <+81>:	mov    0xd0(%rdi),%rax
+   0x0000000000496788 <+88>:	call   *0x60(%rax)
+   0x000000000049678b <+91>:	cmp    $0xffffffff,%eax
+   0x000000000049678e <+94>:	je     0x4967d0 <normal_char_ascent_descent+160>
+#+end_example
+
+The execution point which triggered the error is
+
+#+begin_example
+   0x0000000000496744 <+20>:	mov    %rax,0x8(%rsp)
+=> 0x0000000000496749 <+25>:	mov    0xa8(%rdi),%eax
+#+end_example
+
+And exploring the registers we get:
+
+#+begin_example
+(gdb) info registers
+rax            0x969a045504f3f00   678249438456528640
+rbx            0x42523f0           69542896
+rcx            0x7ffd00402c24      140724607659044
+rdx            0x7ffd00402c20      140724607659040
+rsi            0xffffffff          4294967295
+rdi            0x0                 0
+rbp            0x7ffd00403570      0x7ffd00403570
+rsp            0x7ffd00402b90      0x7ffd00402b90
+r8             0x7ffd004036d8      140724607661784
+r9             0x0                 0
+r10            0x1                 1
+r11            0x0                 0
+r12            0x7ffd00402c20      140724607659040
+r13            0x0                 0
+r14            0x0                 0
+r15            0x4258054           69566548
+rip            0x496749            0x496749 <normal_char_ascent_descent+25>
+eflags         0x246               [ PF ZF IF ]
+cs             0x33                51
+ss             0x2b                43
+ds             0x0                 0
+es             0x0                 0
+fs             0x0                 0
+gs             0x0                 0
+#+end_example
+
+The current assumption is that =rdi= is a null pointer, but without proper context
+is hard to determine if this is the actual cause of just the consequence of
+another situation triggered somewhere else.
+
+Exploring the function signature from =xdisp.c=:
+
+#+begin_src c
+static void
+normal_char_ascent_descent (struct font *font, int c, int *ascent, int *descent)
+#+end_src
+
+Considering the assembly code above, the error is triggered by the first
+statement of the function, which is:
+
+#+begin_src c
+normal_char_ascent_descent (struct font *font, int c, int *ascent, int *descent)
+{
+  *ascent = FONT_BASE (font);
+  *descent = FONT_DESCENT (font);
+#+end_src
+
+=FONT_BASE= seems like a function call at the source code, but in the assembly
+seems like a direct access to a =struct= field, this suspicion is solved since it
+is defined as a macro at =font.h=:
+
+#+begin_src c
+#define FONT_BASE(f) ((f)->ascent)
+#+end_src
+
+* Download and build Emacs
+
+My approach to gather more information is to download the source code and setup
+the development environment on my local machine so I can step by step debug the
+code and determine the root cause of the problem. I'm using NixOS so to
+determine which version of Emacs I'm using is just a simple look at the [[https://github.com/NixOS/nixpkgs/blob/057f9aecfb71c4437d2b27d3323df7f93c010b7e/pkgs/applications/editors/emacs/sources.nix#L78][source
+code]].
+
+** Download the right version
+The current version of Emacs that I'm using is defined by the following =nix=
+code:
+
+#+begin_src nix
+  emacs29 = import ./make-emacs.nix (mkArgs {
+    pname = "emacs";
+    version = "29.1";
+    variant = "mainline";
+    rev = "29.1";
+    hash = "sha256-3HDCwtOKvkXwSULf3W7YgTz4GV8zvYnh2RrL28qzGKg=";
+  });
+#+end_src
+
+This version can be downloaded directly from =GNU.org= with:
+
+#+begin_src bash
+wget https://ftp.gnu.org/gnu/emacs/emacs-29.1.tar.xz
+wget https://ftp.gnu.org/gnu/emacs/emacs-29.1.tar.xz.sig
+#+end_src
+
+** Validate the signatures
+Signature validation is an optional step but considered necessary for a full and
+validated workflow. First we start by downloading the key used to sign Emacs:
+
+#+begin_src bash
+gpg --keyserver keyserver.ubuntu.com --recv-keys 17E90D521672C04631B1183EE78DAE0F3115E06B
+#+end_src
+
+#+begin_example
+gpg: key E78DAE0F3115E06B: public key "Eli Zaretskii <eliz@gnu.org>" imported
+gpg: Total number processed: 1
+gpg:               imported: 1
+#+end_example
+
+Next two steps are to trust and sign the key so it can properly be used on the
+signature validation.
+#+begin_src bash
+gpg --edit-key 17E90D521672C04631B1183EE78DAE0F3115E06B
+#+end_src
+
+#+begin_example
+gpg (GnuPG) 2.4.1; Copyright (C) 2023 g10 Code GmbH
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+
+
+pub  rsa4096/E78DAE0F3115E06B
+     created: 2022-03-09  expires: never       usage: SC
+     trust: unknown       validity: unknown
+sub  rsa4096/98D2EE6D730F2472
+     created: 2022-03-09  expires: never       usage: E
+[ unknown] (1). Eli Zaretskii <eliz@gnu.org>
+
+gpg> trust
+pub  rsa4096/E78DAE0F3115E06B
+     created: 2022-03-09  expires: never       usage: SC
+     trust: unknown       validity: unknown
+sub  rsa4096/98D2EE6D730F2472
+     created: 2022-03-09  expires: never       usage: E
+[ unknown] (1). Eli Zaretskii <eliz@gnu.org>
+
+Please decide how far you trust this user to correctly verify other users' keys
+(by looking at passports, checking fingerprints from different sources, etc.)
+
+  1 = I don't know or won't say
+  2 = I do NOT trust
+  3 = I trust marginally
+  4 = I trust fully
+  5 = I trust ultimately
+  m = back to the main menu
+
+Your decision? 4
+
+pub  rsa4096/E78DAE0F3115E06B
+     created: 2022-03-09  expires: never       usage: SC
+     trust: full          validity: unknown
+sub  rsa4096/98D2EE6D730F2472
+     created: 2022-03-09  expires: never       usage: E
+[ unknown] (1). Eli Zaretskii <eliz@gnu.org>
+Please note that the shown key validity is not necessarily correct
+unless you restart the program.
+#+end_example
+
+Sign the key with:
+#+begin_src bash
+gpg --lsign-key "17E9 0D52 1672 C046 31B1  183E E78D AE0F 3115 E06B"
+#+end_src
+
+#+begin_example
+pub  rsa4096/E78DAE0F3115E06B
+     created: 2022-03-09  expires: never       usage: SC
+     trust: full          validity: unknown
+sub  rsa4096/98D2EE6D730F2472
+     created: 2022-03-09  expires: never       usage: E
+[ unknown] (1). Eli Zaretskii <eliz@gnu.org>
+
+
+pub  rsa4096/E78DAE0F3115E06B
+     created: 2022-03-09  expires: never       usage: SC
+     trust: full          validity: unknown
+ Primary key fingerprint: 17E9 0D52 1672 C046 31B1  183E E78D AE0F 3115 E06B
+
+     Eli Zaretskii <eliz@gnu.org>
+
+Are you sure that you want to sign this key with your
+key "Rafael <rafael@...>" (317B6999F8FB5701)
+
+The signature will be marked as non-exportable.
+
+Really sign? (y/N) y
+#+end_example
+
+And finally verify the downloaded binaries with:
+#+begin_src bash
+gpg --verify emacs-29.1.tar.xz.sig emacs-29.1.tar.xz
+#+end_src
+
+#+begin_example
+gpg: Signature made Sun 30 Jul 2023 08:49:54 AM CEST
+gpg:                using RSA key 17E90D521672C04631B1183EE78DAE0F3115E06B
+gpg: checking the trustdb
+gpg: marginals needed: 3  completes needed: 1  trust model: pgp
+gpg: depth: 0  valid:   4  signed:   1  trust: 0-, 0q, 0n, 0m, 0f, 4u
+gpg: depth: 1  valid:   1  signed:   0  trust: 0-, 0q, 0n, 0m, 1f, 0u
+gpg: next trustdb check due at 2024-08-10
+gpg: Good signature from "Eli Zaretskii <eliz@gnu.org>" [full]
+#+end_example
+
+** Build
+The first step to build Emacs is to extract the downloaded archive
+#+begin_src bash
+xz -d emacs-29.1.tar.xz
+tar -xvf emacs-29.1.tar
+#+end_src
+
+The source code will be available on the respective extracted directory. If you
+are using =nix=, you can use directly the development packages from the
+derivation:
+
+#+begin_src bash
+nix develop nixpkgs#emacs29-gtk3
+#+end_src
+
+Build an non-optimized version for debugging:
+
+#+begin_src bash
+CFLAGS='-g3 -O0' ./configure
+#+end_src
+
+#+begin_example
+checking for xcrun... no
+checking for GNU Make... make
+checking build system type... x86_64-pc-linux-gnu
+checking host system type... x86_64-pc-linux-gnu
+checking whether the C compiler works... yes
+checking for C compiler default output file name... a.out
+checking for suffix of executables...
+checking whether we are cross compiling... no
+checking for suffix of object files... o
+checking whether the compiler supports GNU C... yes
+checking whether gcc accepts -g... yes
+checking for gcc option to enable C11 features... none needed
+checking whether the compiler is clang... no
+checking for compiler option needed when checking for declarations... none
+checking whether gcc and cc understand -c and -o together... yes
+checking for stdio.h... yes
+checking for stdlib.h... yes
+checking for string.h... yes
+checking for inttypes.h... yes
+checking for stdint.h... yes
+checking for strings.h... yes
+checking for sys/stat.h... yes
+#+end_example
+
+And compile it with
+#+begin_src bash
+make
+#+end_src
+
+After this the binaries will be available inside the directory =src=.
+
+* Debug
+With the new built binary just run =gdb= and let's set a breakpoint on the
+function which we found in our previous debugging iteration.
+
+#+begin_src bash
+gdb ./src/emacs
+#+end_src
+
+Now we can set breakpoints using the code as reference, such as:
+
+#+begin_example
+b xdisp.c:29826
+#+end_example
+
+And finally execute it with the =r= command. As is possible to see by the image
+below, is much more clear the actual status of the debugging session.
+
+[[./found.png]]
+
+The parameters are shown along with the function calls, so is possible to
+validate our first assumption that the first argument was a null pointer. Also now the backtrace on =gdb= will give us more useful information:
+
+#+begin_example
+(gdb) bt
+#0  0x00000000004a3532 in normal_char_ascent_descent (font=0x0, c=-1, ascent=0x7ffffffed370,
+    descent=0x7ffffffed374) at xdisp.c:29826
+#1  0x00000000004a3667 in normal_char_height (font=0x0, c=-1) at xdisp.c:29862
+#2  0x000000000045c29d in handle_single_display_spec (it=0x7ffffffee2a0, spec=0x4085763, object=0x40806c4,
+    overlay=0x0, position=0x7ffffffee408, bufpos=0, display_replaced=0, frame_window_p=true,
+    enable_eval_p=true) at xdisp.c:5971
+#3  0x000000000045b575 in handle_display_spec (it=0x7ffffffee2a0, spec=0x4085763, object=0x40806c4,
+    overlay=0x0, position=0x7ffffffee408, bufpos=0, frame_window_p=true) at xdisp.c:5719
+#4  0x000000000045b0d4 in handle_display_prop (it=0x7ffffffee2a0) at xdisp.c:5627
+#5  0x000000000045744e in handle_stop (it=0x7ffffffee2a0) at xdisp.c:4134
+#6  0x0000000000464c8c in next_element_from_string (it=0x7ffffffee2a0) at xdisp.c:9103
+#7  0x000000000046207f in get_next_display_element (it=0x7ffffffee2a0) at xdisp.c:8066
+#8  0x000000000049faca in display_string (string=0x0, lisp_string=0x40806c4, face_string=0x0,
+    face_string_pos=0, start=0, it=0x7ffffffee2a0, field_width=0, precision=3, max_x=656, multibyte=1)
+    at xdisp.c:28661
+#9  0x000000000049c4dd in display_mode_element (it=0x7ffffffee2a0, depth=6, field_width=0, precision=-2,
+    elt=0x40806c4, props=0x0, risky=false) at xdisp.c:27224
+#10 0x000000000049cb5e in display_mode_element (it=0x7ffffffee2a0, depth=5, field_width=0, precision=-2,
+    elt=0x3f4f4e3, props=0x0, risky=false) at xdisp.c:27395
+#11 0x000000000049ce8c in display_mode_element (it=0x7ffffffee2a0, depth=4, field_width=0, precision=0,
+    elt=0x3f4f4f3, props=0x0, risky=false) at xdisp.c:27472
+#12 0x000000000049ce8c in display_mode_element (it=0x7ffffffee2a0, depth=3, field_width=0, precision=0,
+    elt=0x3f65383, props=0x0, risky=false) at xdisp.c:27472
+#13 0x000000000049cb5e in display_mode_element (it=0x7ffffffee2a0, depth=2, field_width=0, precision=0,
+    elt=0x3f67843, props=0x0, risky=false) at xdisp.c:27395
+#14 0x000000000049ce8c in display_mode_element (it=0x7ffffffee2a0, depth=1, field_width=0, precision=0,
+    elt=0x3f67853, props=0x0, risky=false) at xdisp.c:27472
+#15 0x000000000049b665 in display_mode_line (w=0x142a1d8, face_id=MODE_LINE_ACTIVE_FACE_ID,
+    format=0x3f67863) at xdisp.c:26898
+#16 0x000000000049b346 in display_mode_lines (w=0x142a1d8) at xdisp.c:26811
+#17 0x000000000049b04e in redisplay_mode_lines (window=0x142a1dd, force=false) at xdisp.c:26746
+#18 0x0000000000472a0f in echo_area_display (update_frame_p=true) at xdisp.c:13194
+#+end_example
+
+The above output was trimmed to the relevant elements only, as we may consider
+the function call chain =echo_area_display -> display_mode_line ->
+handle_single_display_spec=.
+
+On the execution call, the first member which seems to retrieve the font to pass
+it forward is =xdisp.handle_single_display_spec=. To examine it, we drop to the
+second execution frame with =frame 2=.
+
+[[./found-null.png]]
+
+
+We can print the full details of the =face= structure with:
+
+#+begin_example
+(gdb) p *((struct face*) face)
+$13 = {lface = {0x6d50, 0x395ddd4, 0x142aed4, 0xc420, 0x18a, 0x7ffff38576a0, 0xc420, 0x0, 0x0, 0x32a95c4,
+    0x3644fc4, 0x0, 0x0, 0x0, 0x0, 0x408087d, 0x0, 0x1439204, 0x10ef0, 0x0}, id = 22, gc = 0x0,
+  stipple = 0, foreground = 4288200293, background = 4280032804, underline_color = 0, overline_color = 0,
+  strike_through_color = 0, box_color = 0, font = 0x0, fontset = -1, box_vertical_line_width = 0,
+  box_horizontal_line_width = 0, underline_pixels_above_descent_line = 0, box = FACE_NO_BOX,
+  underline = FACE_NO_UNDERLINE, use_box_color_for_shadows_p = false, overline_p = false,
+  strike_through_p = false, foreground_defaulted_p = false, background_defaulted_p = false,
+  underline_defaulted_p = false, overline_color_defaulted_p = false,
+  strike_through_color_defaulted_p = false, box_color_defaulted_p = false,
+  underline_at_descent_line_p = false, tty_bold_p = false, tty_italic_p = false, tty_underline_p = false,
+  tty_reverse_p = false, tty_strike_through_p = false, colors_copied_bitwise_p = false,
+  overstrike = false, hash = 35184229174591, next = 0x0, prev = 0x0, ascii_face = 0x407d8a0, extra = 0x0}
+#+end_example
+
+The code below is when the =face_id= fails to be converted from an =id= to a =face=
+structure which contains a valid =font=.
+
+#+begin_src c
+#ifdef HAVE_WINDOW_SYSTEM
+	  value = XCAR (XCDR (spec));
+	  if (NUMBERP (value))
+	    {
+	      struct face *face = FACE_FROM_ID (it->f, it->face_id);
+	      it->voffset = - (XFLOATINT (value)
+	           		  * (normal_char_height (face->font, -1)));
+	    }
+#endif /* HAVE_WINDOW_SYSTEM */
+#+end_src
+
+The retrieval is defined at [[https://github.com/emacs-mirror/emacs/blob/8e0882d17a38cb9d309df705e76a8e88529f30a9/src/frame.h#L1634C1-L1641C2][frame.h]]:
+
+#+begin_src c
+/* Return a non-null pointer to the cached face with ID on frame F.  */
+INLINE struct face *
+FACE_FROM_ID (struct frame *f, int id)
+{
+  eassert (0 <= id && id < FRAME_FACE_CACHE (f)->used);
+  return FRAME_FACE_CACHE (f)->faces_by_id[id];
+}
+#+end_src
+
+The =FRAME_FACE_CACHE= macro is defined at [[https://github.com/emacs-mirror/emacs/blob/8e0882d17a38cb9d309df705e76a8e88529f30a9/src/frame.h#L1381][frame.h]] as:
+
+#+begin_src c
+#define FRAME_FACE_CACHE(F)	(F)->face_cache
+#+end_src
+
+Back to =gdb= a small investigation in the font cache gives:
+
+#+begin_example
+(gdb) print it->face_id
+$16 = 22
+(gdb) print it->f->face_cache
+$23 = (struct face_cache *) 0x1434ec0
+(gdb) print it->f->face_cache
+$23 = (struct face_cache *) 0x1434ec0
+(gdb) print it->face_id
+$24 = 22
+(gdb) print it->f->face_cache[22]
+$26 = {buckets = 0x7ffff72cf064 <ft_glyph_private_key>, f = 0x7ffff726d7c0 <_cairo_ft_glyph_fini>,
+  faces_by_id = 0x1, size = 49, used = 21490624, menu_face_changed_p = false}
+#+end_example
+
+For further debugging setting a conditional breakpoint would be useful, this can
+be done with:
+
+#+begin_example
+(gdb) info breakpoints
+Num     Type           Disp Enb Address            What
+2       breakpoint     keep y   0x00000000004a352e in normal_char_ascent_descent at xdisp.c:29826
+	breakpoint already hit 12 times
+3       breakpoint     keep y   0x000000000045c29d xdisp.c:5971
+4       breakpoint     keep y   0x000000000045c248 in handle_single_display_spec at xdisp.c:5969
+5       breakpoint     keep y   0x000000000045c29d xdisp.c:5971
+#+end_example
+
+Then to set the breakpoint based on the =face_id=.
+
+#+begin_example
+(gdb) condition 4 it->face_id == 22
+#+end_example
+
+* Conclusion
+After some time of debugging my conclusion was that the cause was a missing font
+in the frame cache which is a glyph font (nerd-icons) used to render the
+modeline. Since Doom Emacs uses [[https://github.com/seagle0128/doom-modeline][doom-modeline]], I continued my investigation
+towards that direction.
+
+** Solution
+The simplest solution is to install a clean version of Doom Emacs, edit the
+=init.el= file to remove =modeline=:
+
+#+begin_src emacs-lisp
+modeline          ; snazzy, Atom-inspired modeline, plus API
+#+end_src
+
+Start Emacs and run
+
+#+begin_src emacs-lisp
+nerd-icons-install-fonts
+#+end_src
+
+Or =M-x nerd-icons-install-fonts=. After this the normal configuration can be
+applied to Doom Emacs and =doom sync= should bring it all back to normal.
+
+* Appendix
+** GDB cheatsheet
+
+- =C-x C-a= switch between =tui= (=ncurses=) mode and console.
+- =C-x C-o= switch between the buffers.
+- =frame N= drop to the Nth frame of the stack
+- =print= prints a variable, you can cast it to the specific type as example =print
+  *((struct face *)face)=
+- =n= steps, =c= continues the execution, =r= runs (or restart) the program
+- =info breakpoints= shows the list of all breakpoints
+- =b= sets a breakpoint, then use =info breakpoints= to get the id to set conditions
+  - =condition 4 it->face_id==20= is an example of condition
+- =bt= shows the backtrace of the execution
