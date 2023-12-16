@@ -1,0 +1,109 @@
+#+title: Configuring LDAC codec on Nixos for higher sound quality
+#+Date: 2023-10-25
+#+Draft: false
+#+Tags[]: nixos
+#+PROPERTY: header-args :eval never-export
+
+LDAC (Low Delay Audio Codec) is a high-quality audio codec developed by Sony
+Corporation. It is designed to provide superior sound quality by transmitting
+audio data at a high bit rate over Bluetooth connections. LDAC supports a
+variety of sampling rates and bit depths, allowing for flexible usage across
+different audio devices.
+
+Unlike other Bluetooth audio codecs, LDAC has the ability to transmit audio data
+at three different coding rates - 330kbps, 660kbps, and 990kbps - depending on
+the network conditions and the desired balance between sound quality and
+transmission stability.
+
+LDAC also employs a unique adaptive bit rate control technique that adjusts the
+coding rate in real-time to ensure optimal performance. By enabling LDAC, users
+can experience high-resolution audio playback over Bluetooth with minimal loss
+in sound quality.
+
+* Validating the state of the current device
+
+On NixOS using PulseAudio is possible to list all sinks with the following:
+
+#+begin_src bash :results output
+pactl list sinks
+#+end_src
+
+The list is extensive and was trimmed for sake of readability. For your device,
+find the following attributes which confirm which codec is actually being used:
+
+#+begin_example
+Sink #89076
+    Name: bluez_output.A4_77_58_4E_DC_D8.1
+    Description: Soundcore Space A40
+    Driver: PipeWire
+    Properties:
+        api.bluez5.address = "A4:77:58:4E:DC:D8"
+        api.bluez5.codec = "aac"
+        api.bluez5.profile = "a2dp-sink"
+#+end_example
+
+The following sends a message to the device for a =JSON= list of codecs, replace
+the device =MAC= for your device's =MAC= address.
+
+#+begin_src bash :results output
+pactl send-message /card/bluez_card.A4_77_58_4E_DC_D8/bluez list-codec
+#+end_src
+
+#+RESULTS:
+: [{"name":"4","description":"AAC"},{"name":"1","description":"SBC"},{"name":"2","description":"SBC-XQ"}]
+
+* NixOS configuration
+Here my following NixOS configuration, =pulseaudioFull= already contains all
+codecs, including =LDAC=.
+
+#+begin_src nix
+sound.enable = true;
+hardware.pulseaudio.enable = false;
+security.rtkit.enable = true;
+services.pipewire = {
+    enable = true;
+    alsa.enable = true;
+    alsa.support32Bit = true;
+    pulse.enable = true;
+};
+
+programs.bash.shellAliases = { mixer = "pulsemixer"; };
+environment.systemPackages = with pkgs; [
+
+    pulseaudioFull
+    # Console mixer
+    pulsemixer
+
+    # Equalizer on sterids
+    easyeffects
+];
+#+end_src
+
+* Set the configuration
+
+The configuration can be easily set by:
+
+#+begin_src bash :results output
+pactl send-message /card/bluez_card.A4_77_58_4E_DC_D8/bluez switch-codec '"ldac"'
+#+end_src
+
+** Confirm the change
+To confirm the change the previous stepps can be just repeated, or for easy of
+access, run the following snippet of code:
+
+#+begin_src bash :results output
+pactl list sinks | grep "api.bluez5.codec"
+#+end_src
+
+#+RESULTS:
+: api.bluez5.codec = "ldac"
+
+
+* Notes
+For Soundcore a40, it was required to install a new version of the firmware on
+the device to have the capability of using the =ldac= codec.
+
+* References
+- [[http://soundexpert.org/articles/-/blogs/audio-quality-of-sbc-xq-bluetooth-audio-codec][Audio quality of SBC XQ Bluetooth audio codec - Articles - SoundExpert]]
+- [[https://habr.com/en/articles/456476/][Bluetooth stack modifications to improve audio quality on headphones without AAC, aptX, or LDAC codecs]] (Russian:[[https://habr.com/en/articles/455316/][Модифицируем Bluetooth-стек для улучшения звука на наушниках без кодеков AAC]] )
+- [[https://lists.freedesktop.org/archives/pulseaudio-discuss/2019-June/031168.html][{pulseaudio-discuss} {PATCH v11 00/11} Bluetooth A2DP codecs]]
