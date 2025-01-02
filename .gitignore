@@ -4,3 +4,4 @@ bench.c
 resources/_gen/
 themes/hermit/resources/_gen/
 .hugo_build.lock
+public/*
