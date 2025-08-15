@@ -1,6 +1,6 @@
 #+title: Waydroid on X11 on Nixos
 #+Date: 2025-02-03
-#+Draft: true
+#+Draft: false
 #+Tags[]: nixos android waydroid
 #+PROPERTY: header-args :eval never-export
 
