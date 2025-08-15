@@ -1,0 +1,61 @@
+#+title: Migrate Timescale Hypertables To Vanilla Postgres
+#+Date: 2025-08-15
+#+Draft: false
+#+Tags[]: database, postgres, timescale, timeseries
+#+PROPERTY: header-args :eval never-export
+
+
+My reasons for migration are due to lack of deeper understanding (and time for
+it) of the mechanics related to timescale internal hypertables maintenance and
+an incident where I had data loss during an upgrade. Life is busy so reducing
+the complexity and returning to vanilla postgres is the best way forward.
+
+* Timescale, hypertables and the migration problem
+Timescale enhances Postgres for time-series data by introducing hypertables,
+which are virtual tables that automatically partition data into smaller,
+manageable tables called chunks, typically based on a time dimension. A common
+tool like =pg_dump= interacts only with the main hypertable, which is essentially
+an empty parent table containing metadata and pointers to its chunks. Since the
+actual data resides within these child chunk tables, a standard =pg_dump= captures
+the schema of the empty parent but fails to include the data-filled chunks.
+
+* Solution
+This data is visible when queried directly with =psql=, allowing the =COPY= with a
+=TO 'table.csv'= approach, but this is a highly concurrent where +98% of the
+operations are inserts, and restoring this to a new database when clients are
+performing operations without any better approach (=ON CONFLICT .. DO NOTHING=)
+would result in errors during the process. A simpler approach is to let the
+database itself handle the conflicts.
+
+With this in mind the best way forward is to convert the table by just creating
+a new table with the same structure and content, assuming a hypertable named
+=my_table=, the migration goes as follows:
+
+#+begin_src sql
+CREATE TABLE my_table_raw AS SELECT * FROM my_table;
+ALTER TABLE my_table RENAME TO my_table_hypertable;
+ALTER TABLE my_table_raw RENAME TO my_table;
+#+end_src
+
+Finally =pg_dump= can dump the database properly and migrate it to a new vanilla
+Postgres instance:
+
+#+begin_src sql
+
+pg_dump \
+  --data-only \
+  --column-inserts \
+  --table=ticker \
+  -U "user" -h "postgres-host.domain.com" -p "5432" \
+  -d "database_name" \
+    | sed 's/);$/) ON CONFLICT (date, symbol) DO NOTHING;/' > table.sql
+#+end_src
+
+** Alternative solution the =csv= export
+Just to leave it documented in case is useful for someone reading this:
+#+begin_src sql
+psql \
+  -U "user" -h "postgres-host.domain.com" -p "5432" \
+  -d "database_name"
+  -c "\COPY (SELECT * FROM my_table) TO 'data.csv' WITH CSV HEADER"
+#+end_src

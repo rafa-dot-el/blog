@@ -1,0 +1,229 @@
+#+title: Waydroid on X11 on Nixos
+#+Date: 2025-02-03
+#+Draft: true
+#+Tags[]: nixos android waydroid
+#+PROPERTY: header-args :eval never-export
+
+Waydroid is an /Android in a Container/ solution for Linux. Waydroid uses Linux
+namespaces (user, pid, uts, net, mount, ipc) to run a full Android system in a
+container and provide Android applications on any GNU/Linux-based platform (arm,
+arm64, x86, x86-64). The Android system inside the container has direct access
+to needed hardware through LXC and the binder interface.
+
+But unfortunately is only available for =Wayland=, and due to reasons [fn:1] I use
+=X11=.
+
+* Installation
+On =Nixos= everything is =Nix= code, so below is the code for installing the /Waydroid/.
+
+#+begin_src nix
+virtualisation.waydroid.enable = true;
+environment.systemPackages = with pkgs; [
+        weston # Waydroid requirement
+];
+#+end_src
+
+Then after a system rebuild you need to initialize Waydroid, there are two
+options, a vanilla version of Lineage OS, or a version that comes with =GAPPS=.
+For the vanilla version:
+
+#+begin_src bash :results verbatim :async
+sudo waydroid init
+#+end_src
+
+For the =GAPPS= version:
+
+#+begin_src bash :results verbatim :async
+sudo waydroid init -f -s GAPPS -v https://ota.waydro.id/vendor -c https://ota.waydro.id/system
+#+end_src
+* Starting the environment
+
+#+begin_src bash :results verbatim :async
+sudo systemctl start waydroid-container
+weston &
+#+end_src
+
+Within =Weston= open a terminal and execute:
+
+#+begin_src bash :results verbatim :async
+waydroid session start &
+waydroid show-full-ui
+#+end_src
+* First time manual setup
+During the first boot the system will have a completely new and fresh install of
+Android (Lineage OS). I recommend the following [[https://docs.waydro.id/faq/disable-on-screen-keyboard][disabling on screen keyboard]] and
+creating a shared folder from the host to the container:
+
+#+begin_src bash :results verbatim :async
+sudo mount --bind ~/Downloads ~/.local/share/waydroid/data/media/0/Download
+#+end_src
+
+* Stopping the environment
+If for some reason you require to restart or stop the environment, withing
+=Weston= execute:
+
+#+begin_src bash :results verbatim :async
+waydroid session stop
+#+end_src
+
+For a full stop of the container execute the following:
+
+#+begin_src bash :results verbatim :async
+sudo systemctl stop waydroid-container
+#+end_src
+* Appendix
+** Full code in a module
+Below the implementation of the code above, but this version is written as a =Nix=
+module which can be easily incorporated and activated with all the required
+dependencies. One of the advantages of modules is the flexibility of toggling on
+and off features in the main configuration as per environment, user or platform.
+
+#+begin_src nix
+{ config, lib, pkgs, ... }:
+
+with lib;
+
+let cfg = config.rafa.features.virtualisation.android;
+in {
+  options.rafa.features.virtualisation.android = mkOption {
+    type = types.bool;
+    default = false;
+    description = "Enable simple Android virtualisation features.";
+  };
+  config = mkIf cfg {
+    virtualisation.waydroid.enable = true;
+    environment.systemPackages = with pkgs; [
+      weston # Waydroid requirement
+    ];
+  };
+
+  meta = { maintainers = with lib.maintainers; [ rafa-dot-el ]; };
+}
+#+end_src
+** Forcing a manual data cleanup
+In case of the system reaching a state where you do require to start over,
+consider removing manually all files from the following directories:
+
+#+begin_src bash :results verbatim :async
+sudo rm -r /var/lib/waydroid/* ~/.local/share/waydroid
+#+end_src
+** Managing applications throught the command line
+
+Listing installed applications:
+
+#+begin_src bash :results verbatim :async
+waydroid app list
+#+end_src
+
+#+RESULTS:
+#+begin_example
+Name: Files
+packageName: com.android.documentsui
+categories:
+	android.intent.category.LAUNCHER
+Name: Google Play Store
+packageName: com.android.vending
+categories:
+	android.intent.category.LAUNCHER
+Name: Contacts
+packageName: com.android.contacts
+categories:
+	android.intent.category.LAUNCHER
+Name: Recorder
+packageName: org.lineageos.recorder
+categories:
+	android.intent.category.LAUNCHER
+Name: Gallery
+packageName: com.android.gallery3d
+categories:
+	android.intent.category.LAUNCHER
+Name: Browser
+packageName: org.lineageos.jelly
+categories:
+	android.intent.category.LAUNCHER
+Name: Music
+packageName: org.lineageos.eleven
+categories:
+	android.intent.category.LAUNCHER
+Name: Calendar
+packageName: org.lineageos.etar
+categories:
+	android.intent.category.LAUNCHER
+Name: Settings
+packageName: com.android.settings
+categories:
+	android.intent.category.LAUNCHER
+Name: Calculator
+packageName: com.android.calculator2
+categories:
+	android.intent.category.LAUNCHER
+Name: Clock
+packageName: com.android.deskclock
+categories:
+	android.intent.category.LAUNCHER
+Name: System Tracing
+packageName: com.android.traceur
+categories:
+	android.intent.category.INFO
+#+end_example
+
+Installing an application from an =.apk= file (note the section above when I
+mention mapping directories):
+
+#+begin_src bash :results verbatim :async
+waydroid app install </path/to/app.apk>
+#+end_src
+
+Launching an application:
+#+begin_src bash :results verbatim :async
+waydroid app launch <application package name>
+#+end_src
+
+As for example:
+
+#+begin_src bash :results verbatim :async
+waydroid app launch com.android.calculator2
+#+end_src
+
+
+** Start a shell within the container
+In case is required a shell within the container, the following will enable it:
+
+#+begin_src bash :results verbatim :async
+sudo waydroid shell
+#+end_src
+** Google Play Certification
+When launching waydroid with GAPPS for the first time you will be notified that
+the device is not certified for Google Play Protect. You can follow the
+instructions on screen to self certify your device, or here's a shortcut:
+
+#+begin_src bash
+sudo waydroid shell
+#+end_src
+
+
+Inside the shell run this command:
+
+#+begin_src bash
+ANDROID_RUNTIME_ROOT=/apex/com.android.runtime ANDROID_DATA=/data ANDROID_TZDATA_ROOT=/apex/com.android.tzdata ANDROID_I18N_ROOT=/apex/com.android.i18n sqlite3 /data/data/com.google.android.gsf/databases/gservices.db "select * from main where name = \"android_id\";"
+#+end_src
+
+Copy the resulting number and use on the following website: https://www.google.com/android/uncertified
+
+Stop the container and wait a few minutes until the configuration is propagated.
+** Disable On-Screen Keyboard
+Waydroid by default shows the Android virtual keyboard when selecting an input
+field. To disable that, and only use the physical keyboard, turn off the
+following setting:
+
+=Settings > System > Languages & input > Physical keyboard > Use on-screen keyboard=
+* Future work
+Make use of [[https://microg.org/download.html][=MicroG=]] instead of =GAPPS= due to licensing
+* References
+- [[https://waydro.id/][Waydroid Website]]
+- [[https://wiki.nixos.org/wiki/Waydroid][Nixos Wiki Page on Waydroid]]
+* Footnotes
+
+[fn:1] I have been using X11 for most of my life and I have zero reasons to
+change and go through the hassle of it for no significant functionality,
+performance or stability gain.
