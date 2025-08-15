@@ -48,7 +48,7 @@ pg_dump \
   --table=ticker \
   -U "user" -h "postgres-host.domain.com" -p "5432" \
   -d "database_name" \
-    | sed 's/);$/) ON CONFLICT (date, symbol) DO NOTHING;/' > table.sql
+    | sed 's/);$/) ON CONFLICT (col1, col2) DO NOTHING;/' > table.sql
 #+end_src
 
 ** Alternative solution the =csv= export
