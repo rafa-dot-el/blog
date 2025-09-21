@@ -1,0 +1,193 @@
+#+title: Remove Old Pipelines From GitLab Backup
+#+Date: 2025-08-20
+#+Draft: false
+#+Tags[]: gitlab devops backup
+#+PROPERTY: header-args :eval never-export
+
+Once I switched to the =SKIP=tar= style of backup for GitLab, I noticed how
+much space the artifacts and consequently the pipelines were taking,
+significantly more than the actual code and registry.
+
+* Current state
+In a backup created with =SKIP=tar=, this is my current layout before any
+optimization:
+
+#+begin_example
+root@gitlab-server:/data/backups# l
+total 31G
+drwxrwxrwt 4 root            root              15 Aug 20 00:04 .
+drwxr-xr-x 4 root            root               4 Aug 19 21:35 ..
+-rw------- 1 systemd-network systemd-network  20G Aug 19 23:53 artifacts.tar.gz
+-rw-r--r-- 1 systemd-network systemd-network  509 Aug 20 00:04 backup_information.yml
+-rw------- 1 systemd-network systemd-network  16M Aug 19 22:36 builds.tar.gz
+-rw------- 1 systemd-network systemd-network  146 Aug 20 00:04 ci_secure_files.tar.gz
+drwxr-xr-x 2 systemd-network systemd-network    3 Aug 19 22:17 db
+-rw------- 1 systemd-network systemd-network  146 Aug 20 00:04 external_diffs.tar.gz
+-rw------- 1 systemd-network systemd-network  146 Aug 19 23:55 lfs.tar.gz
+-rw------- 1 systemd-network systemd-network  146 Aug 20 00:04 packages.tar.gz
+-rw------- 1 systemd-network systemd-network 1.8G Aug 19 23:55 pages.tar.gz
+-rw------- 1 systemd-network systemd-network 8.8G Aug 20 00:04 registry.tar.gz
+drwx------ 4 systemd-network systemd-network    4 Aug 19 22:17 repositories
+-rw------- 1 systemd-network systemd-network 147K Aug 19 23:55 terraform_state.tar.gz
+-rw------- 1 systemd-network systemd-network  37M Aug 19 22:36 uploads.tar.gz
+#+end_example
+
+* Analyzing the Data Using the Rails Console
+In my case, I am running GitLab on a Docker container. In this scenario, to
+spawn the rails console, run:
+
+#+begin_src bash :results verbatim :async
+docker exec -it gitlab gitlab-rails console
+#+end_src
+
+In my analysis, I plan to check how much disk space pipelines older than 6
+months are consuming using the following Ruby snippet:
+
+#+begin_src ruby
+cutoff_date = 6.months.ago
+
+total_pipelines = 0
+total_jobs = 0
+total_artifacts = 0
+total_artifact_size = 0
+
+old_pipelines = 0
+old_jobs = 0
+old_artifacts = 0
+old_artifact_size = 0
+
+pipelines_to_delete = []
+
+Project.all.pluck(:id).each do |project_id|
+  pipelines_in_project = Ci::Pipeline.where(project_id: project_id).order(created_at: :desc)
+
+  next unless pipelines_in_project.any?
+
+  most_recent_pipeline = pipelines_in_project.first
+  pipelines_to_delete_in_project = []
+
+  if most_recent_pipeline.created_at > cutoff_date
+    pipelines_to_delete_in_project = pipelines_in_project.where("created_at < ?", cutoff_date)
+  else
+    pipelines_to_delete_in_project = pipelines_in_project.where.not(id: most_recent_pipeline.id)
+  end
+
+   pipelines_to_delete +=  pipelines_to_delete_in_project
+
+  pipelines_in_project.each do |pipeline|
+    total_pipelines += 1
+
+    is_old_pipeline = pipelines_to_delete_in_project.where(id: pipeline.id).any?
+
+    # Get all associated jobs
+    pipeline.jobs_in_self_and_project_descendants.each do |job|
+      total_jobs += 1
+      old_jobs += 1 if is_old_pipeline
+
+      # Get all associated artifacts
+      job.job_artifacts.each do |artifact|
+        total_artifacts += 1
+        total_artifact_size += artifact.file.size rescue 0
+
+        if is_old_pipeline
+          old_artifacts += 1
+          old_artifact_size += artifact.file.size rescue 0
+        end
+      end
+    end
+  end
+  old_pipelines += pipelines_to_delete_in_project.count
+end
+
+puts "-----------------------------------------"
+puts "    GitLab CI/CD Data Analysis Report    "
+puts "-----------------------------------------"
+puts "Total Pipeline Data:"
+puts "  Pipelines: #{total_pipelines}"
+puts "  Jobs: #{total_jobs}"
+puts "  Artifacts: #{total_artifacts}"
+puts "  Artifact Space: #{(total_artifact_size.to_f / 1.gigabyte).round(2)} GB"
+puts
+puts "Data to be Cleaned Up:"
+puts "  Pipelines: #{old_pipelines}"
+puts "  Jobs: #{old_jobs}"
+puts "  Artifacts: #{old_artifacts}"
+puts "  Artifact Space: #{(old_artifact_size.to_f / 1.gigabyte).round(2)} GB"
+puts "-----------------------------------------"
+#+end_src
+
+#+begin_example
+-----------------------------------------
+    GitLab CI/CD Data Analysis Report
+-----------------------------------------
+Total Pipeline Data:
+  Pipelines: 15419
+  Jobs: 60590
+  Artifacts: 51015
+  Artifact Space: 90.4 GB
+
+Data to be Cleaned Up:
+  Pipelines: 14837
+  Jobs: 55806
+  Artifacts: 46116
+  Artifact Space: 71.55 GB
+-----------------------------------------
+#+end_example
+* Cleanup
+Still on the same Rails console:
+
+#+begin_src ruby
+pipelines_to_delete.each do |pipeline|
+        puts "Deleting pipeline #{pipeline.id}..."
+        pipeline.destroy
+end
+
+#+end_src
+* Verification by Running the Analysis Again
+
+#+begin_example
+-----------------------------------------
+    GitLab CI/CD Data Analysis Report
+-----------------------------------------
+Total Pipeline Data:
+  Pipelines: 576
+  Jobs: 4719
+  Artifacts: 4862
+  Artifact Space: 18.48 GB
+
+Data to be Cleaned Up:
+  Pipelines: 0
+  Jobs: 0
+  Artifacts: 0
+  Artifact Space: 0.0 GB
+-----------------------------------------
+#+end_example
+
+* Result
+After regenerating the backup with:
+
+#+begin_src bash
+docker exec -it gitlab gitlab-rake gitlab:backup:create SKIP=tar
+#+end_src
+
+The backup folder shows the following results:
+
+#+begin_example
+root@gitlab-server:/data/backups# l
+total 14G
+drwx------ 4 systemd-network root              15 Aug 22 19:38 .
+drwxr-xr-x 4 root            root               4 Aug 19 21:35 ..
+-rw------- 1 systemd-network systemd-network 2.9G Aug 22 19:31 artifacts.tar.gz
+-rw-r--r-- 1 systemd-network systemd-network  509 Aug 22 19:38 backup_information.yml
+-rw------- 1 systemd-network systemd-network  14M Aug 22 19:28 builds.tar.gz
+-rw------- 1 systemd-network systemd-network  146 Aug 22 19:38 ci_secure_files.tar.gz
+drwxr-xr-x 2 systemd-network systemd-network    3 Aug 22 19:25 db
+-rw------- 1 systemd-network systemd-network  146 Aug 22 19:38 external_diffs.tar.gz
+-rw------- 1 systemd-network systemd-network  146 Aug 22 19:33 lfs.tar.gz
+-rw------- 1 systemd-network systemd-network  146 Aug 22 19:38 packages.tar.gz
+-rw------- 1 systemd-network systemd-network 1.8G Aug 22 19:33 pages.tar.gz
+-rw------- 1 systemd-network systemd-network 8.8G Aug 22 19:38 registry.tar.gz
+drwx------ 4 systemd-network systemd-network    4 Aug 22 19:25 repositories
+-rw------- 1 systemd-network systemd-network 147K Aug 22 19:33 terraform_state.tar.gz
+-rw------- 1 systemd-network systemd-network  37M Aug 22 19:28 uploads.tar.gz
+#+end_example
