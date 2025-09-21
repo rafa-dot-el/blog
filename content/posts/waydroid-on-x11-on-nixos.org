@@ -1,20 +1,21 @@
-#+title: Waydroid on X11 on Nixos
+#+title: Waydroid on X11 on NixOS
 #+Date: 2025-02-03
 #+Draft: false
 #+Tags[]: nixos android waydroid
 #+PROPERTY: header-args :eval never-export
 
-Waydroid is an /Android in a Container/ solution for Linux. Waydroid uses Linux
-namespaces (user, pid, uts, net, mount, ipc) to run a full Android system in a
-container and provide Android applications on any GNU/Linux-based platform (arm,
-arm64, x86, x86-64). The Android system inside the container has direct access
-to needed hardware through LXC and the binder interface.
+Waydroid is an /Android in a Container/ solution for Linux. Waydroid uses
+Linux namespaces (user, pid, uts, net, mount, ipc) to run a full Android
+system in a container and provide Android applications on any GNU/Linux-based
+platform (arm, arm64, x86, x86-64). The Android system inside the container
+has direct access to needed hardware through LXC and the binder interface.
 
-But unfortunately is only available for =Wayland=, and due to reasons [fn:1] I use
-=X11=.
+Unfortunately, Waydroid is only available for =Wayland=, and due to reasons
+[fn:1] I use =X11=.
 
 * Installation
-On =Nixos= everything is =Nix= code, so below is the code for installing the /Waydroid/.
+On =NixOS= everything is =Nix= code, so the following shows the code for
+installing /Waydroid/.
 
 #+begin_src nix
 virtualisation.waydroid.enable = true;
@@ -23,8 +24,8 @@ environment.systemPackages = with pkgs; [
 ];
 #+end_src
 
-Then after a system rebuild you need to initialize Waydroid, there are two
-options, a vanilla version of Lineage OS, or a version that comes with =GAPPS=.
+After a system rebuild, Waydroid requires initialization. There are two
+options: a vanilla version of Lineage OS, or a version that comes with =GAPPS=.
 For the vanilla version:
 
 #+begin_src bash :results verbatim :async
@@ -50,17 +51,17 @@ waydroid session start &
 waydroid show-full-ui
 #+end_src
 * First time manual setup
-During the first boot the system will have a completely new and fresh install of
-Android (Lineage OS). I recommend the following [[https://docs.waydro.id/faq/disable-on-screen-keyboard][disabling on screen keyboard]] and
-creating a shared folder from the host to the container:
+During the first boot, the system will have a completely new and fresh
+install of Android (Lineage OS). I recommend [[https://docs.waydro.id/faq/disable-on-screen-keyboard][disabling the on-screen keyboard]]
+and creating a shared folder from the host to the container:
 
 #+begin_src bash :results verbatim :async
 sudo mount --bind ~/Downloads ~/.local/share/waydroid/data/media/0/Download
 #+end_src
 
 * Stopping the environment
-If for some reason you require to restart or stop the environment, withing
-=Weston= execute:
+If for some reason you require restarting or stopping the environment,
+within =Weston= execute:
 
 #+begin_src bash :results verbatim :async
 waydroid session stop
@@ -73,10 +74,11 @@ sudo systemctl stop waydroid-container
 #+end_src
 * Appendix
 ** Full code in a module
-Below the implementation of the code above, but this version is written as a =Nix=
-module which can be easily incorporated and activated with all the required
-dependencies. One of the advantages of modules is the flexibility of toggling on
-and off features in the main configuration as per environment, user or platform.
+The following shows the implementation of the code above, but this version is
+written as a =Nix= module which can be easily incorporated and activated with
+all the required dependencies. One of the advantages of modules is the
+flexibility of toggling features on and off in the main configuration
+according to environment, user or platform.
 
 #+begin_src nix
 { config, lib, pkgs, ... }:
@@ -101,13 +103,13 @@ in {
 }
 #+end_src
 ** Forcing a manual data cleanup
-In case of the system reaching a state where you do require to start over,
-consider removing manually all files from the following directories:
+In case the system reaches a state where you require starting over, consider
+manually removing all files from the following directories:
 
 #+begin_src bash :results verbatim :async
 sudo rm -r /var/lib/waydroid/* ~/.local/share/waydroid
 #+end_src
-** Managing applications throught the command line
+** Managing Applications Through the Command Line
 
 Listing installed applications:
 
@@ -167,8 +169,8 @@ categories:
 	android.intent.category.INFO
 #+end_example
 
-Installing an application from an =.apk= file (note the section above when I
-mention mapping directories):
+Installing an application from an =.apk= file (note the section above
+regarding mapping directories):
 
 #+begin_src bash :results verbatim :async
 waydroid app install </path/to/app.apk>
@@ -187,15 +189,17 @@ waydroid app launch com.android.calculator2
 
 
 ** Start a shell within the container
-In case is required a shell within the container, the following will enable it:
+In case a shell within the container is required, the following will enable
+it:
 
 #+begin_src bash :results verbatim :async
 sudo waydroid shell
 #+end_src
 ** Google Play Certification
-When launching waydroid with GAPPS for the first time you will be notified that
-the device is not certified for Google Play Protect. You can follow the
-instructions on screen to self certify your device, or here's a shortcut:
+When launching Waydroid with GAPPS for the first time, you will be notified
+that the device is not certified for Google Play Protect. You can follow the
+instructions on screen to self-certify your device, or use the following
+shortcut:
 
 #+begin_src bash
 sudo waydroid shell
@@ -208,12 +212,14 @@ Inside the shell run this command:
 ANDROID_RUNTIME_ROOT=/apex/com.android.runtime ANDROID_DATA=/data ANDROID_TZDATA_ROOT=/apex/com.android.tzdata ANDROID_I18N_ROOT=/apex/com.android.i18n sqlite3 /data/data/com.google.android.gsf/databases/gservices.db "select * from main where name = \"android_id\";"
 #+end_src
 
-Copy the resulting number and use on the following website: https://www.google.com/android/uncertified
+Copy the resulting number and use it on the following website:
+https://www.google.com/android/uncertified
 
-Stop the container and wait a few minutes until the configuration is propagated.
+Stop the container and wait a few minutes until the configuration is
+propagated.
 ** Disable On-Screen Keyboard
-Waydroid by default shows the Android virtual keyboard when selecting an input
-field. To disable that, and only use the physical keyboard, turn off the
+Waydroid by default shows the Android virtual keyboard when selecting an
+input field. To disable this and only use the physical keyboard, turn off the
 following setting:
 
 =Settings > System > Languages & input > Physical keyboard > Use on-screen keyboard=
@@ -224,6 +230,6 @@ Make use of [[https://microg.org/download.html][=MicroG=]] instead of =GAPPS= du
 - [[https://wiki.nixos.org/wiki/Waydroid][Nixos Wiki Page on Waydroid]]
 * Footnotes
 
-[fn:1] I have been using X11 for most of my life and I have zero reasons to
-change and go through the hassle of it for no significant functionality,
+[fn:1] I have been using X11 for most of my life and have no compelling
+reasons to change and go through the hassle for no significant functionality,
 performance or stability gain.

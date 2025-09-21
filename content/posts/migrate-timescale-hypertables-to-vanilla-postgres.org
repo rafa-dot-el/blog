@@ -5,31 +5,33 @@
 #+PROPERTY: header-args :eval never-export
 
 
-My reasons for migration are due to lack of deeper understanding (and time for
-it) of the mechanics related to timescale internal hypertables maintenance and
-an incident where I had data loss during an upgrade. Life is busy so reducing
-the complexity and returning to vanilla postgres is the best way forward.
+This post documents a migration from TimescaleDB hypertables to vanilla
+PostgreSQL tables. The decision to migrate was driven by the need to reduce
+overall system complexity, particularly given my insufficient understanding of
+TimescaleDB's internal hypertable maintenance mechanisms and a data loss
+incident that occurred during an upgrade.
 
-* Timescale, hypertables and the migration problem
-Timescale enhances Postgres for time-series data by introducing hypertables,
+* TimescaleDB, Hypertables and the Migration Problem
+TimescaleDB enhances PostgreSQL for time-series data by introducing hypertables,
 which are virtual tables that automatically partition data into smaller,
-manageable tables called chunks, typically based on a time dimension. A common
-tool like =pg_dump= interacts only with the main hypertable, which is essentially
+manageable tables called chunks, typically organized by time dimension. Standard
+tools such as =pg_dump= interact only with the main hypertable, which functions as
 an empty parent table containing metadata and pointers to its chunks. Since the
-actual data resides within these child chunk tables, a standard =pg_dump= captures
-the schema of the empty parent but fails to include the data-filled chunks.
+actual data resides within child chunk tables, a standard =pg_dump= operation
+captures only the schema of the empty parent table while omitting the data-filled chunks.
 
 * Solution
-This data is visible when queried directly with =psql=, allowing the =COPY= with a
-=TO 'table.csv'= approach, but this is a highly concurrent where +98% of the
-operations are inserts, and restoring this to a new database when clients are
-performing operations without any better approach (=ON CONFLICT .. DO NOTHING=)
-would result in errors during the process. A simpler approach is to let the
-database itself handle the conflicts.
+While the data remains accessible through direct =psql= queries, enabling a =COPY=
+with =TO 'table.csv'= approach, my database experiences high concurrency with
+approximately 98% of operations being inserts. Restoring this data to a new
+database while clients continue performing operations would result in conflicts
+during the restoration process without proper conflict resolution mechanisms
+(such as =ON CONFLICT .. DO NOTHING=). A more effective approach involves
+leveraging the database's internal conflict resolution capabilities.
 
-With this in mind the best way forward is to convert the table by just creating
-a new table with the same structure and content, assuming a hypertable named
-=my_table=, the migration goes as follows:
+Given these considerations, I employed a migration strategy that involves
+creating a new table with identical structure and content. Assuming a hypertable
+named =my_table=, the migration process proceeds as follows:
 
 #+begin_src sql
 CREATE TABLE my_table_raw AS SELECT * FROM my_table;
@@ -37,8 +39,8 @@ ALTER TABLE my_table RENAME TO my_table_hypertable;
 ALTER TABLE my_table_raw RENAME TO my_table;
 #+end_src
 
-Finally =pg_dump= can dump the database properly and migrate it to a new vanilla
-Postgres instance:
+Subsequently, =pg_dump= can properly export the database for migration to a new
+vanilla PostgreSQL instance:
 
 #+begin_src sql
 
@@ -51,8 +53,8 @@ pg_dump \
     | sed 's/);$/) ON CONFLICT (col1, col2) DO NOTHING;/' > table.sql
 #+end_src
 
-** Alternative solution the =csv= export
-Just to leave it documented in case is useful for someone reading this:
+** Alternative Solution: CSV Export
+For completeness, an alternative CSV export approach is documented below:
 #+begin_src sql
 psql \
   -U "user" -h "postgres-host.domain.com" -p "5432" \
