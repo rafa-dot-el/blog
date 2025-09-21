@@ -1,4 +1,4 @@
-#+title: Debug Gitlab CI/CD pipelines with Metasploit
+#+title: Debug GitLab CI/CD Pipelines with Metasploit
 #+Date: 2023-07-28
 #+Draft: false
 #+Tags[]: devops gitlab-ci gitlab metasploit
@@ -6,26 +6,26 @@
 
 Many individuals frequently encounter difficulties when troubleshooting their
 pipelines. Often, the common approach to debugging these pipelines involves
-employing a trial and error methodology. However, there exists a superior
-solution that is both more sophisticated and efficient.
+employing a trial and error methodology. However, a superior solution exists
+that is both more sophisticated and efficient.
 
-By injecting code in between the commands which one wishes to troubleshoot, and
-then having a full environment access along with the tools required to perform
-tests and analysis is the ideal scenario. Considering the requirements:
+By injecting code between the commands one wishes to troubleshoot, and then
+having full environment access along with the tools required to perform tests
+and analysis represents the ideal scenario. Considering the requirements:
 
-  - Not always you can connect to the runner instance directly, so the runner
-    has to connect to your server.
-  - Runners can be executed inside a cluster (Kubernetes, Docker Swarm, AWS ECS,
-    etc...), the tool and connection method must accommodate for it.
+  - Direct connection to the runner instance is not always possible, so the
+    runner must connect to your server.
+  - Runners can be executed inside a cluster (Kubernetes, Docker Swarm, AWS
+    ECS, etc.), so the tool and connection method must accommodate this.
   - The injected binary must have the minimum amount of dependencies possible,
-    so no further setup is required.
+    requiring no further setup.
   - The binary must include tooling to facilitate the troubleshooting process,
     such as tools for downloading, uploading and manipulating files,
-    troubleshooting network connections and connectivity issues and handling
+    troubleshooting network connections and connectivity issues, and handling
     processes.
 
-This is a concept which can be reused on other CI/CD tools, such as Github
-Actions, Travis and Jenkins.
+This concept can be reused with other CI/CD tools, such as GitHub Actions,
+Travis CI, and Jenkins.
 
 ** Meterpreter
 Meterpreter is a powerful and versatile post-exploitation tool widely used in
@@ -34,22 +34,22 @@ Meterpreter is designed to provide remote access and control over compromised
 systems, allowing penetration testers and security professionals to interact
 with target machines seamlessly.
 
-Meterpreter fulfill all our requirements, it operates using several connection
-methods, including reverse connection, can be generated for not having any
-dependencies and includes a good set of tooling which we can leverage to debug
-CI/CD pipelines.
+Meterpreter fulfills all our requirements: it operates using several
+connection methods including reverse connection, can be generated without any
+dependencies, and includes a comprehensive set of tooling which we can leverage
+to debug CI/CD pipelines.
 
 * Generate a Meterpreter payload
-The very first step into this demonstration is to generate the binary payload
-being used. Once Metasploit is installed, simply run:
+The first step in this demonstration is to generate the binary payload to be
+used. Once Metasploit is installed, simply run:
 
 #+begin_src bash
 msfvenom -p linux/x64/meterpreter_reverse_tcp LHOST=<IP> LPORT=<PORT> -f elf > meterpreter.elf
 #+end_src
 
-To facilitate the process, on systems with a few network cards, is common for
-the first one to be a =loopback= interface, the bash function below get the first
-IP address after the =loopback= interface:
+To facilitate the process, on systems with multiple network cards, it is
+common for the first one to be a =loopback= interface. The bash function below
+gets the first IP address after the =loopback= interface:
 
 #+begin_src bash
 function msfvenom-linux-meterpreter-default() {
@@ -61,11 +61,11 @@ function msfvenom-linux-meterpreter-default() {
 }
 #+end_src
 
-Nothing more than this is required to create a Meterpreter binary. If you run
-the function =msfvenom-linux-meterpreter-default= without any parameter, the first
-network interface after =loopback= will be used, or you can specify as the first
-parameter, the IP address which the meterpreter payload will use. The second
-parameter is the port to which it will connect to, the default is =4444= in case
+Nothing more is required to create a Meterpreter binary. If you run the
+function =msfvenom-linux-meterpreter-default= without any parameter, the first
+network interface after =loopback= will be used, or you can specify the IP
+address which the Meterpreter payload will use as the first parameter. The
+second parameter is the port to which it will connect; the default is =4444= if
 no port is set.
 
 We can easily check if the resulting binary is statically linked:
@@ -77,10 +77,10 @@ ldd ../../meterprefer.elf
 #+RESULTS:
 : 	statically linked
 
-Other networking aspects should also be taken into consideration, in case you
-are behind a firewall, opening the respective ports and configuring the proper
-forward is required. If you are using =Nixos= you will need to setup your local
-firewall as such:
+Other networking aspects should also be taken into consideration. In case you
+are behind a firewall, opening the respective ports and configuring proper
+forwarding is required. If you are using =NixOS=, you will need to setup your
+local firewall as follows:
 
 #+begin_src nix
 networking.firewall = {
@@ -97,13 +97,13 @@ pipeline:
   runtime convert it to a binary.
 - Serve it over the network and download it as a step on the pipeline.
 
-For the sake of simplicity, we will follow up with adding it to the repository
-as a binary file.
+For the sake of simplicity, we will proceed by adding it to the repository as
+a binary file.
 
 * Executing
-Before moving forward with the pipeline, the next step is to setup Metasploit
-and listen for the connection from the binary. Start =msfconsole= on your platform
-and use the following commands, adjust them based on the arguments used when
+Before proceeding with the pipeline, the next step is to setup Metasploit and
+listen for the connection from the binary. Start =msfconsole= on your platform
+and use the following commands, adjusting them based on the arguments used when
 creating the binary:
 
 #+begin_src
@@ -124,10 +124,10 @@ msf6 exploit(multi/handler) >
 [*] Started reverse TCP handler on 192.168.15.22:4444
 #+end_src
 
-* Gitlab runner job definition
-For the exemplification of this technique, a simple pipeline like the one below
-can be used to attest the functionality and capabilities described on this
-document. Add the following file to your repository, commit and push it.
+* GitLab Runner Job Definition
+For demonstrating this technique, a simple pipeline like the one below can be
+used to attest the functionality and capabilities described in this document.
+Add the following file to your repository, commit and push it.
 
 #+begin_src yaml
 stages:
@@ -140,10 +140,10 @@ Run:
     - ./meterpreter.elf
 #+end_src
 
-If =CI/CD= is not being shown on the left menu, select =Settings > General=, on this
+If =CI/CD= is not shown on the left menu, select =Settings > General=. On this
 page expand =Visibility, project features, permissions=, in the =Repository=
-section, turn on =CI/CD=, select Save changes. On real pipelines you may be
-interested in using =before_script= to execute the injected binary:
+section, turn on =CI/CD=, then select Save changes. On real pipelines you may
+be interested in using =before_script= to execute the injected binary:
 
 #+begin_src yaml
 .start_debug_session:
@@ -159,8 +159,8 @@ my_failing_job:
 #+end_src
 
 * Shell
-After puting all the pieces together and triggering the pipeline, you should be
-presented with similar messages on your Metasploit terminal.
+After putting all the pieces together and triggering the pipeline, you should
+be presented with similar messages on your Metasploit terminal.
 
 #+begin_example
 [*] Meterpreter session 1 opened (192.168.15.22:4444 -> 192.168.15.22:33800) at 2023-07-28 23:46:41 +0200
@@ -178,8 +178,8 @@ Active sessions
 
 You can use =sessions -i= to interact with a connection, and =Ctrl+Z= to stop
 interacting with it without killing it. Once the connection is in place, you
-have a full shell, along with a lot of other useful commands which you can use
-to debug your pipelines:
+have a full shell, along with many other useful commands which you can use to
+debug your pipelines:
 
 #+begin_example
 meterpreter > ls
@@ -255,4 +255,4 @@ route         View and modify the routing table
 #+end_example
 
 * References
-- [[https://docs.gitlab.com/ee/ci/yaml/][Gitlab CI reference]]
+- [[https://docs.gitlab.com/ee/ci/yaml/][GitLab CI reference]]
