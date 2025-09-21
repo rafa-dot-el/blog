@@ -4,15 +4,15 @@
 #+Tags[]: archivism rom emulation
 #+PROPERTY: header-args :eval never-export
 
-Thanks to [[https://archive.org][Archive.org]] a lot of the human history and our digital legacy is being
-preserved. Below a few snippets of code to download some of the available
-material from the website. It depends on =pup=. On nixos you can just run:
+[[https://archive.org][Archive.org]] preserves significant portions of human history and digital legacy.
+This post presents code snippets for downloading available material from the
+website. The scripts depend on =pup=. On NixOS, this can be installed by running:
 
 #+begin_src bash
 nix-shell -p pup
 #+end_src
 
-Save the script below to any file:
+The following script should be saved to a file:
 
 #+begin_src bash
 function archiveorg-download7z(){
@@ -44,17 +44,17 @@ function archiveorg-downloadZip(){
 }
 #+end_src
 
-And load it with:
+Load the script with:
 
 #+begin_src bash
 source script.sh
 #+end_src
 
-Below a list of games grouped by their system.
+The following sections list games grouped by their respective systems.
 
 * Games
-** Nintendo Game Cube
-Urls:
+** Nintendo GameCube
+URLs:
 
  * https://archive.org/download/gamecubenaiso
  * https://archive.org/download/gamecubenaiso/Nintendo%20-%20Gamecube
@@ -67,7 +67,7 @@ archiveorg-download7z https://archive.org/download/gamecubenaiso/Nintendo%20-%20
 #+end_src
 
 ** Sega Dreamcast
-Url:
+URL:
  * https://archive.org/download/almstcmpltdrmcst
 
 *** Download
@@ -75,17 +75,16 @@ Url:
 archiveorg-download7z https://archive.org/download/almstcmpltdrmcst
 #+end_src
 
-** PC Engine and Turbo Grafx
-Url:
+** PC Engine and TurboGrafx
+URL:
  * https://archive.org/download/NEC_PC_Engine_CD-ROM2_System_and_TurboGrafx-CD_2016_Reference_Set_Redump_Validated_ROMs/roms/
 
 *** Download
 #+begin_src bash
-archiveorg-download7z https://archive.org/download/gamecubenaiso
-archiveorg-download7z https://archive.org/download/gamecubenaiso/Nintendo%20-%20Gamecube
+archiveorg-download7z https://archive.org/download/NEC_PC_Engine_CD-ROM2_System_and_TurboGrafx-CD_2016_Reference_Set_Redump_Validated_ROMs/roms/
 #+end_src
 ** Sega Saturn
-Url:
+URL:
  * https://archive.org/download/SgaStrnCmplt
 
 *** Download
