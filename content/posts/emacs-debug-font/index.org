@@ -4,19 +4,19 @@
 #+Tags[]: emacs
 #+PROPERTY: header-args :eval never-export
 
-During an attempt to install [[https://github.com/minad/jinx][Jinx]], my Emacs broke. In this attempt I tried to
-update the system, Emacs, and Doom Emacs, to try to fix the issue, but it
-created a new one. The resulting error was not clear, just a segmentation fault,
-and here I will try to walk through the thought process of debugging it.
+During an attempt to install [[https://github.com/minad/jinx][Jinx]], my Emacs broke. In this attempt, I tried to
+update the system, Emacs, and Doom Emacs to fix the issue, but it
+created a new one. The resulting error was not clear—just a segmentation fault—
+and here I will walk through the thought process of debugging it.
 
 I isolated the issue by removing Doom Emacs, and the problem went away. The next
-attempt was with a fresh install of Doom Emacs, the same problem returned. It
-was tested and the same results were obtained with Emacs 28.1, 28.2 and 29.1.
+attempt was with a fresh install of Doom Emacs; the same problem returned. It
+was tested, and the same results were obtained with Emacs 28.1, 28.2, and 29.1.
 
 * A naive attempt
-My first attempt to try to determine a possible cause for this was to compile
+My first attempt to determine a possible cause was to compile
 Emacs with the debugging symbols required for a better understanding of the
-situation. When using =nix= this can be accomplished with:
+situation. When using =nix=, this can be accomplished with:
 
 #+begin_src bash
 nix-build -E 'with import <nixpkgs> {}; enableDebugging emacs29-gtk3'
@@ -84,12 +84,12 @@ Backtrace:
 Segmentation fault (core dumped)
 #+end_example
 
-The above output doesn't give that much information about the cause or possible
+The above output doesn't give much information about the cause or possible
 location of the error.
 
 ** Debug
-A next step is to debug the current binary with =gdb= and try to collect more
-insights on the situation. On =NixOS= segmentation faults trigger a =coredump= which
+The next step is to debug the current binary with =gdb= and try to collect more
+insights about the situation. On =NixOS=, segmentation faults trigger a =coredump= which
 is handled by =coredumpctl=.
 
 First we list the last =coredump=:
@@ -115,14 +115,14 @@ And we get the following output:
 ]
 #+end_src
 
-With this we have enough information to debug out current =coredump=, for this =gdb=
+With this, we have enough information to debug our current =coredump=. For this, =gdb=
 is required to be installed.
 
 #+begin_src bash
 coredumpctl debug /nix/store/kshwj88iz6xkhsyhkw745x6ivghfx44d-emacs-gtk3-29.1/bin/.emacs-29.1-wrapped
 #+end_src
 
-After this an =gdb= session is launched and a prompt will be presented, the
+After this, a =gdb= session is launched and a prompt will be presented. The
 backtrace of execution can be explored with =bt=.
 
 #+begin_example
@@ -164,7 +164,7 @@ backtrace of execution can be explored with =bt=.
 #32 0x000000000063a731 in Ffuncall ()
 #+end_example
 
-Dropping the frame for the first one which seems related to Emacs code will give
+Dropping the frame to the first one that seems related to Emacs code will give
 
 #+begin_example
 #7  0x0000000000496749 in normal_char_ascent_descent ()
@@ -243,8 +243,8 @@ fs             0x0                 0
 gs             0x0                 0
 #+end_example
 
-The current assumption is that =rdi= is a null pointer, but without proper context
-is hard to determine if this is the actual cause of just the consequence of
+The current assumption is that =rdi= is a null pointer, but without proper context,
+it is hard to determine if this is the actual cause or just the consequence of
 another situation triggered somewhere else.
 
 Exploring the function signature from =xdisp.c=:
@@ -264,9 +264,9 @@ normal_char_ascent_descent (struct font *font, int c, int *ascent, int *descent)
   *descent = FONT_DESCENT (font);
 #+end_src
 
-=FONT_BASE= seems like a function call at the source code, but in the assembly
-seems like a direct access to a =struct= field, this suspicion is solved since it
-is defined as a macro at =font.h=:
+=FONT_BASE= seems like a function call in the source code, but in the assembly,
+it seems like a direct access to a =struct= field. This suspicion is resolved since it
+is defined as a macro in =font.h=:
 
 #+begin_src c
 #define FONT_BASE(f) ((f)->ascent)
@@ -274,10 +274,10 @@ is defined as a macro at =font.h=:
 
 * Download and build Emacs
 
-My approach to gather more information is to download the source code and setup
-the development environment on my local machine so I can step by step debug the
-code and determine the root cause of the problem. I'm using NixOS so to
-determine which version of Emacs I'm using is just a simple look at the [[https://github.com/NixOS/nixpkgs/blob/057f9aecfb71c4437d2b27d3323df7f93c010b7e/pkgs/applications/editors/emacs/sources.nix#L78][source
+My approach to gathering more information is to download the source code and set up
+the development environment on my local machine so I can debug the
+code step by step and determine the root cause of the problem. I'm using NixOS, so
+determining which version of Emacs I'm using is just a simple look at the [[https://github.com/NixOS/nixpkgs/blob/057f9aecfb71c4437d2b27d3323df7f93c010b7e/pkgs/applications/editors/emacs/sources.nix#L78][source
 code]].
 
 ** Download the right version
@@ -302,8 +302,8 @@ wget https://ftp.gnu.org/gnu/emacs/emacs-29.1.tar.xz.sig
 #+end_src
 
 ** Validate the signatures
-Signature validation is an optional step but considered necessary for a full and
-validated workflow. First we start by downloading the key used to sign Emacs:
+Signature validation is an optional step but is considered necessary for a full and
+validated workflow. First, we start by downloading the key used to sign Emacs:
 
 #+begin_src bash
 gpg --keyserver keyserver.ubuntu.com --recv-keys 17E90D521672C04631B1183EE78DAE0F3115E06B
@@ -315,7 +315,7 @@ gpg: Total number processed: 1
 gpg:               imported: 1
 #+end_example
 
-Next two steps are to trust and sign the key so it can properly be used on the
+The next two steps are to trust and sign the key so it can be properly used for
 signature validation.
 #+begin_src bash
 gpg --edit-key 17E90D521672C04631B1183EE78DAE0F3115E06B
@@ -393,7 +393,7 @@ The signature will be marked as non-exportable.
 Really sign? (y/N) y
 #+end_example
 
-And finally verify the downloaded binaries with:
+Finally, verify the downloaded binaries with:
 #+begin_src bash
 gpg --verify emacs-29.1.tar.xz.sig emacs-29.1.tar.xz
 #+end_src
@@ -416,15 +416,15 @@ xz -d emacs-29.1.tar.xz
 tar -xvf emacs-29.1.tar
 #+end_src
 
-The source code will be available on the respective extracted directory. If you
-are using =nix=, you can use directly the development packages from the
+The source code will be available in the respective extracted directory. If you
+are using =nix=, you can directly use the development packages from the
 derivation:
 
 #+begin_src bash
 nix develop nixpkgs#emacs29-gtk3
 #+end_src
 
-Build an non-optimized version for debugging:
+Build a non-optimized version for debugging:
 
 #+begin_src bash
 CFLAGS='-g3 -O0' ./configure
@@ -460,11 +460,11 @@ And compile it with
 make
 #+end_src
 
-After this the binaries will be available inside the directory =src=.
+After this, the binaries will be available inside the directory =src=.
 
 * Debug
-With the new built binary just run =gdb= and let's set a breakpoint on the
-function which we found in our previous debugging iteration.
+With the newly built binary, just run =gdb= and set a breakpoint on the
+function that we found in our previous debugging iteration.
 
 #+begin_src bash
 gdb ./src/emacs
@@ -476,13 +476,13 @@ Now we can set breakpoints using the code as reference, such as:
 b xdisp.c:29826
 #+end_example
 
-And finally execute it with the =r= command. As is possible to see by the image
-below, is much more clear the actual status of the debugging session.
+Finally, execute it with the =r= command. As is possible to see in the image
+below, the actual status of the debugging session is much clearer.
 
 [[./found.png]]
 
-The parameters are shown along with the function calls, so is possible to
-validate our first assumption that the first argument was a null pointer. Also now the backtrace on =gdb= will give us more useful information:
+The parameters are shown along with the function calls, so it is possible to
+validate our first assumption that the first argument was a null pointer. Now the backtrace in =gdb= will give us more useful information:
 
 #+begin_example
 (gdb) bt
@@ -520,11 +520,11 @@ validate our first assumption that the first argument was a null pointer. Also n
 #18 0x0000000000472a0f in echo_area_display (update_frame_p=true) at xdisp.c:13194
 #+end_example
 
-The above output was trimmed to the relevant elements only, as we may consider
+The above output was trimmed to the relevant elements only. We may consider
 the function call chain =echo_area_display -> display_mode_line ->
 handle_single_display_spec=.
 
-On the execution call, the first member which seems to retrieve the font to pass
+In the execution call, the first member that seems to retrieve the font to pass
 it forward is =xdisp.handle_single_display_spec=. To examine it, we drop to the
 second execution frame with =frame 2=.
 
@@ -549,8 +549,8 @@ $13 = {lface = {0x6d50, 0x395ddd4, 0x142aed4, 0xc420, 0x18a, 0x7ffff38576a0, 0xc
   overstrike = false, hash = 35184229174591, next = 0x0, prev = 0x0, ascii_face = 0x407d8a0, extra = 0x0}
 #+end_example
 
-The code below is when the =face_id= fails to be converted from an =id= to a =face=
-structure which contains a valid =font=.
+The code below shows when the =face_id= fails to be converted from an =id= to a =face=
+structure that contains a valid =font=.
 
 #+begin_src c
 #ifdef HAVE_WINDOW_SYSTEM
@@ -582,7 +582,7 @@ The =FRAME_FACE_CACHE= macro is defined at [[https://github.com/emacs-mirror/ema
 #define FRAME_FACE_CACHE(F)	(F)->face_cache
 #+end_src
 
-Back to =gdb= a small investigation in the font cache gives:
+Back in =gdb=, a small investigation of the font cache gives:
 
 #+begin_example
 (gdb) print it->face_id
@@ -618,10 +618,10 @@ Then to set the breakpoint based on the =face_id=.
 #+end_example
 
 * Conclusion
-After some time of debugging my conclusion was that the cause was a missing font
-in the frame cache which is a glyph font (nerd-icons) used to render the
+After some time debugging, my conclusion was that the cause was a missing font
+in the frame cache that is a glyph font (nerd-icons) used to render the
 modeline. Since Doom Emacs uses [[https://github.com/seagle0128/doom-modeline][doom-modeline]], I continued my investigation
-towards that direction.
+in that direction.
 
 ** Solution
 The simplest solution is to install a clean version of Doom Emacs, edit the
@@ -637,7 +637,7 @@ Start Emacs and run
 nerd-icons-install-fonts
 #+end_src
 
-Or =M-x nerd-icons-install-fonts=. After this the normal configuration can be
+Or =M-x nerd-icons-install-fonts=. After this, the normal configuration can be
 applied to Doom Emacs and =doom sync= should bring it all back to normal.
 
 * Appendix
@@ -648,7 +648,7 @@ applied to Doom Emacs and =doom sync= should bring it all back to normal.
 - =frame N= drop to the Nth frame of the stack
 - =print= prints a variable, you can cast it to the specific type as example =print
   *((struct face *)face)=
-- =n= steps, =c= continues the execution, =r= runs (or restart) the program
+- =n= steps, =c= continues the execution, =r= runs (or restarts) the program
 - =info breakpoints= shows the list of all breakpoints
 - =b= sets a breakpoint, then use =info breakpoints= to get the id to set conditions
   - =condition 4 it->face_id==20= is an example of condition

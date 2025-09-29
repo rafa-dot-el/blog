@@ -1,30 +1,30 @@
-#+title: Add Optional Swap For Nixos
+#+title: Add Optional Swap For NixOS
 #+Tags[]: nixos linux
 #+Date: 2023-04-09
 #+Draft: false
 #+PROPERTY: header-args :eval never-export
 
-The main idea behind the usage of SSDs in general is the speed, but sometimes
-cheap SSDs can be unreliable while still performing quite well.
+SSDs are primarily valued for their speed, although inexpensive SSDs may
+exhibit reliability issues while maintaining acceptable performance.
 
-While using Nixos if some hardware is not available at boot you can't simply
-boot on rescue mode and perform a quick edit on =/etc/fstab= , there are more
-advanced recovery processes that need to take place. The main idea of this
-article is to explore the usage of a cheap =NVMe= , in my case, a cheap =M.2= card
-while keeping the system able to boot in case of a hardware failure.
+While using NixOS, if some hardware is not available at boot, you cannot
+simply boot into rescue mode and perform a quick edit on =/etc/fstab=; there
+are more advanced recovery processes that need to take place. This article explores the implementation of an inexpensive NVMe M.2 device
+for swap storage while maintaining system bootability in case of hardware
+failure.
 
-Within this document I intend to explore the idea and results of adding such
-device as a swap drive, its performance implications and overall results.
+This document examines the implementation of such a device as swap storage,
+analyzing performance implications and overall results.
 
 * Benchmark
-This document's recommendations are grounded on the experimental results and
-benchmarks. It is advisable to carry out these same benchmarks on other hardware
-because the criteria for selecting the optimal choice may differ depending on
-the outcome generated from a specific option. This ensures that decisions made
-are not biased towards one particular hardware arrangement and are instead based
-on objective measurements and observations. Keep in mind that the ideal Swap
-setup may vary based on the hardware employed, thus running benchmarks on the
-system before implementation can help achieve the best overall outcome.
+This document's recommendations are grounded in experimental results and
+benchmarks. It is advisable to carry out these same benchmarks on other
+hardware because optimal configuration choices may vary based on specific hardware
+characteristics. This approach ensures that decisions are based on objective
+measurements rather than assumptions about particular hardware configurations. Keep in mind that
+the ideal swap setup may vary based on the hardware employed. Therefore, running
+benchmarks on the system before implementation can help achieve the best
+overall outcome.
 
 A quote about NVMe from Wikipedia:
 #+begin_quote
@@ -35,11 +35,11 @@ previous logical-device interfaces, including multiple long command queues, and
 reduced latency. - Wikipedia on NVMe
 #+end_quote
 
-Based on the following statement from Wikipedia and benchmarks, these devices a
-good choice for caching and swap partitions. Below the benchmark for the NVMe
-drive that will be used:
+Based on the following statement from Wikipedia and benchmarks, these devices
+are a good choice for caching and swap partitions. Below is the benchmark for
+the NVMe drive that will be used:
 
-#+begin_src bash :results output verbatin
+#+begin_src bash :results output verbatim
 sudo nix-shell -p hdparm --command "hdparm -tT /dev/nvme1n1"
 #+end_src
 
@@ -49,21 +49,21 @@ sudo nix-shell -p hdparm --command "hdparm -tT /dev/nvme1n1"
 :  Timing cached reads:   22858 MB in  2.00 seconds = 11449.78 MB/sec
 :  Timing buffered disk reads: 2878 MB in  3.00 seconds = 959.07 MB/sec
 
-The main focus on the above execution result should be on the /Timing buffered
-disk reads/. Working with this as a base we can understand better the impact of
-each and every choice made later on.
-** Luks
-Although Luks may have a slight performance impact, it is necessary to use
+The main focus of the above execution result should be on the /Timing buffered
+disk reads/. Working with this as a base, we can better understand the impact
+of each choice made later.
+** LUKS
+Although LUKS may have a slight performance impact, it is necessary to use
 encryption on all data at rest according to my threat model. Additionally,
-sensitive personal data, access tokens and other credentials are stored in RAM
-and must be protected accordingly. To assess the performance of Luks on your
-hardware, use the following command.
+sensitive personal data, access tokens, and other credentials are stored in
+RAM and must be protected accordingly. To assess the performance of LUKS on
+your hardware, use the following command.
 
-#+begin_src bash ;results raw verbatin drawer
+#+begin_src bash :results raw verbatim drawer
 cryptsetup benchmark
 #+end_src
 
-*** Benchmark table for Luks
+*** Benchmark Table for LUKS
 | Algorithm   | Key  | Encryption    | Decryption    |
 | aes-cbc     | 128b | 1167.7  MiB/s | 3614.7  MiB/s |
 | serpent-cbc | 128b | 110.2  MiB/s  | 402.6  MiB/s  |
@@ -82,15 +82,15 @@ The results indicate that the =aes-xts= algorithm offers stable read and write
 throughput, making it a well-balanced choice. However, it is important to note
 that this algorithm may be 20% slower than =aes-cbc= for decryption. When using
 swap on a machine, consistent levels of writes are required. If a workload
-primarily comprises of read operations, other options should be considered.
+primarily comprises read operations, other options should be considered.
 Additionally, it is possible to enhance security by using a 512-bit key,
 although this will result in a performance loss of approximately 20% for both
-read and write operations and is not required on this specific scenario.
+read and write operations and is not required in this specific scenario.
 
 **** Notes on AES XEX-based tweaked-codebook mode with ciphertext stealing (XTS)
 
-Analyzing deeper the XTS [cite:@mcgrew_extended_2004] implementation and our
-threat model, consider the [[https://en.wikipedia.org/wiki/Disk_encryption_theory#XTS][statement below]]:
+Analyzing the XTS [cite:@mcgrew_extended_2004] implementation and our threat
+model more deeply, consider the [[https://en.wikipedia.org/wiki/Disk_encryption_theory#XTS][statement below]]:
 
 #+begin_quote
 XTS mode is susceptible to data manipulation and tampering, and applications
@@ -107,12 +107,12 @@ used file systems such as ext4 and NTFS only metadata is protected against
 tampering, while the detection of data tampering is non-existent. - Wikipedia
 #+end_quote
 
-We can assume that is not our concern given that the swap is handled and cleaned
-up by the kernel, and all modifications to the disk structure at rest by an
-attacker won't effectively be able to reflect in any deterministic structure
-given the encryption. The only attack vector is destroying the actual data with
-random noise which will invalidate the whole device and is beyond the threat
-model of this implementation.
+We can assume that this is not our concern given that the swap is handled and
+cleaned up by the kernel, and all modifications to the disk structure at rest
+by an attacker will not be able to effectively reflect in any deterministic
+structure given the encryption. The only attack vector is destroying the
+actual data with random noise, which will invalidate the whole device and is
+beyond the threat model of this implementation.
 
 ***** Kernel references for cleaning up the swap
 
@@ -194,9 +194,9 @@ static void zswap_frontswap_init(unsigned type)
 }
 #+end_src
 
-So we finally got to the end of the execution tree, and we can prove that it is
-initialized and set to zero given the usage of =kzalloc=, [[https://archive.kernel.org/oldlinux/htmldocs/kernel-api/API-kzalloc.html][as it is stated on
-kzallow documentation.]]
+So we finally reach the end of the execution tree, and we can prove that it is
+initialized and set to zero given the usage of =kzalloc=, [[https://archive.kernel.org/oldlinux/htmldocs/kernel-api/API-kzalloc.html][as stated in the
+kzalloc documentation.]]
 
 #+begin_example
 Name
@@ -219,8 +219,8 @@ gfp_t flags
 
 * Partitioning
 
-The following disk will be split in a 60/40 ratio into two partitions:
-#+begin_src bash :results output verbatin
+The following disk will be split into two partitions in a 60/40 ratio:
+#+begin_src bash :results output verbatim
 lsblk /dev/nvme1n1
 #+end_src
 
@@ -230,7 +230,7 @@ lsblk /dev/nvme1n1
 : ├─nvme1n1p1 259:4    0 286.2G  0 part
 : └─nvme1n1p2 259:5    0 190.8G  0 part
 
-Use the new device
+Use the new device:
 #+begin_src bash :eval never-export
 export DEVICE="/dev/nvme1n1"
 parted "${DEVICE}" -- mklabel gpt
@@ -239,7 +239,7 @@ parted "${DEVICE}" -- mkpart swap 60% 100%
 #+end_src
 
 ** LUKS
-Luks can be setup with the following:
+LUKS can be set up with the following:
 
 #+begin_src bash :eval never-export
 export DEVICE="/dev/nvme1n1"
@@ -250,15 +250,15 @@ cryptsetup open "${DEVICE}p2" "cache"
 #+end_src
 
 *** Keys
-Nixos need the keys to be available at boot, or mounted in a partition at boot,
-I will use my =/root= directory for this.
+NixOS needs the keys to be available at boot, or mounted in a partition at
+boot. I will use my =/root= directory for this.
 
 #+begin_src bash :eval never-export
 sudo dd count=4096 bs=1 if=/dev/urandom of=/root/.swap.key
 sudo dd count=4096 bs=1 if=/dev/urandom of=/root/.cache.key
 #+end_src
 
-The last step is to add it to Luks:
+The last step is to add it to LUKS:
 
 #+begin_src bash :eval never-export
 cryptsetup luksAddKey "${DEVICE}p1" /root/.swap.key
@@ -266,20 +266,21 @@ cryptsetup luksAddKey "${DEVICE}p2" /root/.cache.key
 #+end_src
 
 * Notes on making the device optional
-Two things are required to make the device optitonal but keep mounting it at boot:
+Two things are required to make the device optional but keep mounting it at
+boot:
 
  - =auto=
  - =nofail=
 
-This will allow the device to be optional, given that is a cheap piece of
-hardware that can die at any moment. From =mount(8)= manual page:
+This will allow the device to be optional, given that it is a cheap piece of
+hardware that can die at any moment. From the =mount(8)= manual page:
 
 #+begin_example
        nofail
            Do not report errors for this device if it does not exist.
 #+end_example
 
-The nix code representing this configuration:
+The Nix code representing this configuration:
 
 #+begin_src nix
 swapDevices = [{
@@ -289,9 +290,10 @@ swapDevices = [{
 #+end_src
 
 * Swap
-Creating the =swap= partition using =mkSwap=, first determine the actual disk:
+Creating the =swap= partition using =mkswap=, first determine the actual
+disk:
 
-#+begin_src bash :results output verbatin :eval never-export
+#+begin_src bash :results output verbatim :eval never-export
 sudo mkswap -L swap-nvme /dev/mapper/swap
 #+end_src
 
@@ -299,19 +301,19 @@ sudo mkswap -L swap-nvme /dev/mapper/swap
 : Setting up swapspace version 1, size = 286.1 GiB (307248492544 bytes)
 : LABEL=swap-nvme, UUID=ac965b4f-f857-4cd3-8c87-91e0ca3a2271
 
-A lazy way to get the proper configuration for the new swap partition is just to
+A lazy way to get the proper configuration for the new swap partition is to
 activate it and run =nixos-generate-config --root /tmp=. It will generate the
-Nixos configuration on =/tmp/etc/nixos/= and you can retrieve the hardware
+NixOS configuration in =/tmp/etc/nixos/= and you can retrieve the hardware
 configuration directly from the directory.
 
-#+begin_src bash :results output verbatin :eval never-export
+#+begin_src bash :results output verbatim :eval never-export
 sudo swapon /dev/mapper/swap
 sudo nixos-generate-config --root /tmp
 #+end_src
 
-Another approach is to adapt the code below to your needs. Note *the block device
-backing the swap should be refered by the partition UUID*. Optionally it can be
-refered using partition labels.
+Another approach is to adapt the code below to your needs. Note that *the
+block device backing the swap should be referred to by the partition UUID*.
+Optionally, it can be referred to using partition labels.
 
 #+begin_src nix
   swapDevices = [{
@@ -327,9 +329,9 @@ refered using partition labels.
   }];
 #+end_src
 
-After enabling this configuration the system will have available swap memory:
+After enabling this configuration, the system will have available swap memory:
 
-#+begin_src bash :results output verbatin :eval never-export
+#+begin_src bash :results output verbatim :eval never-export
 swapon --show
 #+end_src
 
@@ -349,26 +351,27 @@ to perform the necessary compression.
 
 ZSwap compresses memory pages using the Frontswap API. This provides a
 compressed pool which ZSwap can use to evict pages on a least recently used
-(LRU) basis. In case the pool is full, it writes the compressed pages back to
-the swap device it was sourced from.
+(LRU) basis. If the pool is full, it writes the compressed pages back to
+the swap device from which they were sourced.
 
 Each allocation within the =zpool= is not directly accessible but requires a
 handle to be mapped before being accessed. The compressed memory pool is
 dynamically adjusted based on demand and is not preallocated. The default =zpool=
-type is =zbud=, but it can be changed at boot time or at runtime using the =zpool=
-attribute of the =sysfs=.
+type is =zbud=, but it can be changed at boot time or runtime using the =zpool=
+attribute of =sysfs=.
 
 #+begin_src bash
 echo zbud > /sys/module/zswap/parameters/zpool
 #+end_src
 
-=Zbud= type utilizes 1 page to store 2 compressed pages, yielding a
-compression ratio of 2:1 or potentially worse due to the use of half-full zbud
-pages. On the other hand, the zsmalloc type applies a more intricate compressed
-page storage mechanism that allows for higher storage densities. However,
-zsmalloc does not allow for compressed page eviction. In other words, once zswap
-reaches its capacity in zsmalloc, it can no longer remove the oldest compressed
-page, and it can only reject new pages.
+=Zbud= allocates one physical page to store up to two compressed pages, yielding a
+maximum compression ratio of 2:1. Performance may degrade with half-full zbud
+pages. =Z3fold= improves upon zbud by storing up to three compressed pages per
+physical page, providing better memory density while maintaining the ability to
+evict pages when memory pressure increases. =Zsmalloc= offers the highest compression
+density through sophisticated page packing algorithms but lacks eviction capabilities.
+Once zsmalloc reaches capacity, it cannot remove older compressed pages and can
+only reject new allocation requests, potentially leading to memory pressure issues.
 
 When transitioning a swap page from frontswap to zswap, zswap establishes and
 preserves a correspondence between the swap entry, consisting of the swap type
@@ -464,7 +467,7 @@ tar cf benchmark-linux linux/
 lzbench benchmark-linux
 #+end_src
 
-Below the normalized table with the output sorted by .
+Below is the normalized table with the output sorted by compression ratio.
 
 | Compressor name     | Compress.  | Decompress. | Compr. size |  Ratio |
 |---------------------+------------+-------------+-------------+--------|
@@ -513,10 +516,10 @@ Below the normalized table with the output sorted by .
 | density 0.14.2 -3   | 487 MB/s   | 423 MB/s    |   612773674 |  37.54 |
 | tornado 0.6a -3     | 251 MB/s   | 324 MB/s    |   493115543 |  30.21 |
 
-This makes =lz4fast 1.9.2 -3= a balanced option, while the write is a little bit
-underperforming on what is the throughput of the NVMe at 932 MB/s, most
-operations are read and the throughput at 4135 MB/s along with the ratio of
-39.88 are good enough.
+This makes =lz4fast 1.9.2 -3= a balanced option. While the compression rate of 932 MB/s
+is slightly below the NVMe's measured throughput of 959.07 MB/s, the majority of
+operations involve reads where the decompression rate of 4135 MB/s provides
+excellent performance, along with a compression ratio of 39.88%.
 
 Linux Kernel defines it as [[https://github.com/torvalds/linux/blob/aa318c48808c0aa73216bd94c54c4553d3663add/include/linux/lz4.h#L66][at lz4.h]].
 
@@ -529,7 +532,7 @@ From the manual [[https://github.com/lz4/lz4/blob/e3974e5a1476190afdd8b44e67106c
 #+begin_quote
 Same as LZ4_compress_default(), but allows selection of "acceleration" factor.
 The larger the acceleration value, the faster the algorithm, but also the lesser
-the compression. It's a trade-off. It can be fine tuned, with each successive
+the compression. This represents a trade-off that can be fine tuned, with each successive
 value providing roughly +~3% to speed. An acceleration value of "1" is the same
 as regular LZ4_compress_default() Values <= 0 will be replaced by
 LZ4_ACCELERATION_DEFAULT (currently = 1, see lz4.c). Values >
@@ -537,14 +540,15 @@ LZ4_ACCELERATION_MAX will be replaced by LZ4_ACCELERATION_MAX (currently =
 65537, see lz4.c).
 #+end_quote
 
-So similar *but not exactly the same results* as the shown above should be expected.
+So similar *but not exactly the same results* as those shown above should be
+expected.
 
-*** Setting Nixos configuration for ZSwap with =lz4fast=
-Nixos has already built in support for [[https://github.com/NixOS/nixpkgs/blob/e8a861f940da69ca8d4607b893354b7177f7250e/pkgs/os-specific/linux/kernel/common-config.nix#L682][zswap]], it is just required to be enabled.
-First as a good practice for configuration management, is required to confirm
-that the configuration is not set, and then after the change is applied, to
-confirm that it is up and running. Whether =Zswap= is enabled at the boot time
-depends on whether the =CONFIG_ZSWAP_DEFAULT_ON= =Kconfig= option is enabled or not.
+*** Setting NixOS Configuration for ZSwap with =lz4fast=
+NixOS has already built-in support for [[https://github.com/NixOS/nixpkgs/blob/e8a861f940da69ca8d4607b893354b7177f7250e/pkgs/os-specific/linux/kernel/common-config.nix#L682][zswap]]; it just needs to be enabled.
+First, as a good practice for configuration management, it is required to
+confirm that the configuration is not set, and then after the change is
+applied, to confirm that it is up and running. Whether =ZSwap= is enabled at boot time
+depends on whether the =CONFIG_ZSWAP_DEFAULT_ON= =Kconfig= option is enabled.
 This setting can then be overridden by providing the kernel command line
 =zswap.enabled= option, for example =zswap.enabled=0.= ZSwap can also be enabled and
 disabled at runtime using the =sysfs= interface.
@@ -565,9 +569,9 @@ sudo cat /sys/module/zswap/parameters/enabled
 : N
 
 **** Enabling using =sysfs=
-An alternative is to enable by using the =sysfs= interface. This is useful in
-cases where you want to test it, but prefer to not change the configuration just
-yet.
+An alternative is to enable it by using the =sysfs= interface. This is useful
+in cases where you want to test it, but prefer not to change the configuration
+just yet.
 
 #+begin_src bash
 sudo echo 1 > /sys/module/zswap/parameters/enabled
@@ -591,16 +595,25 @@ sudo grep -r . /sys/kernel/debug/zswap
 | /sys/kernel/debug/zswap/pool_limit_hit:0        |
 
 
-**** Nix code
-As the explanation on a previous section of this document, the default =lz4=
-algorithm uses =LZ4_ACCELERATION_DEFAULT=1.= So just the only requirement is to
-set it the kernel parameter.
+**** Page Allocator Selection
+For this implementation, =z3fold= is selected over =zbud= and =zsmalloc= based on the
+following considerations: =z3fold= provides superior memory efficiency compared to
+=zbud= (3:1 vs 2:1 compression ratio) while maintaining eviction capabilities that
+=zsmalloc= lacks. The benchmark results demonstrate that =z3fold= performs slightly
+better than =zbud= for both high and low entropy workloads, making it the optimal
+choice for swap scenarios where memory pressure management is critical.
+
+**** Nix Code
+As explained in a previous section of this document, the default =lz4=
+algorithm uses =LZ4_ACCELERATION_DEFAULT=1=. The configuration requires setting
+both the compressor and zpool allocator parameters.
 
 #+begin_src bash
 GRUB_CMDLINE_LINUX_DEFAULT="zswap.enabled=1 zswap.compressor=lz4"
 #+end_src
 
-Below the complete code for enabling =ZSwap= on Nixos along with other parameters.
+Below is the complete code for enabling =ZSwap= on NixOS along with other
+parameters.
 
 #+begin_src nix
 boot.initrd = {
@@ -646,20 +659,21 @@ sudo cat /sys/module/zswap/parameters/compressor
 #+RESULTS:
 : lz4
 
-** Notes on swap
-Below a non-exhaustive list of parameters which can be tweaked for better performance.
+** Notes on Swap
+Below is a non-exhaustive list of parameters which can be tweaked for better
+performance.
 
 *** =compact_memory=
 Available only when CONFIG_COMPACTION is set. When 1 is written to the file, all
 zones are compacted such that free memory is available in contiguous blocks
-where possible. This can be important for example in the allocation of huge
-pages although processes will also directly compact memory as required.
+where possible. This can be important, for example, in the allocation of huge
+pages, although processes will also directly compact memory as required.
 
 *** =compaction_proactiveness=
 
 This tunable takes a value in the range [0, 100] with a default value of 20.
 This tunable determines how aggressively compaction is done in the background.
-Write of a non zero value to this tunable will immediately trigger the proactive
+Writing a non-zero value to this tunable will immediately trigger proactive
 compaction. Setting it to 0 disables proactive compaction.
 
 Note that compaction has a non-trivial system-wide impact as pages belonging to
@@ -676,8 +690,8 @@ excessive background compaction activity.
 This control is used to define the rough relative IO cost of swapping and
 filesystem paging, as a value between 0 and 200. At 100, the VM assumes equal IO
 cost and will thus apply memory pressure to the page cache and swap-backed pages
-equally; lower values signify more expensive swap IO, higher values indicates
-cheaper.
+equally; lower values signify more expensive swap I/O, higher values indicate
+cheaper swap I/O.
 
 Keep in mind that filesystem IO patterns under memory pressure tend to be more
 efficient than swap’s random IO. An optimal value will require experimentation
@@ -749,8 +763,9 @@ int memory_init(void)
 }
 #+end_src
 
-While reproducing these results, is also interesting to experiment with hogging
-95% of the memory so more swap is used. Below the command to accomplish this:
+While reproducing these results, it is also interesting to experiment with
+hogging 95% of the memory so more swap is used. Below is the command to
+accomplish this:
 
 #+begin_src bash
 stress-ng \
@@ -759,7 +774,7 @@ stress-ng \
   --vm-keep -m 1
 #+end_src
 
-** Full data in RAM data
+** Full Data in RAM
 #+begin_example
 # time ./bench 1000
 [+] Allocating 1000 MB
@@ -1097,20 +1112,20 @@ Threads fairness:
     execution time (avg/stddev):   600.0784/0.00
 #+end_example
 
-** ZSwap compression results
+** ZSwap Compression Results
 To determine how much gain was obtained in terms of space, we can determine the
 difference between the expected consumption and the actual consumption in terms
 of storage.
 
-Each page is stored in memory aligned in blocks, usually with the size of 4k,
-but determined by the variable =PAGESIZE=. =ZSwap= info can be obtained from the
+Each page is stored in memory aligned in blocks, usually with a size of 4k,
+but determined by the variable =PAGESIZE=. =ZSwap= information can be obtained from the
 =/sys/kernel/debug/zswap= directory. The main calculation is the amount of stored
 pages, multiplied by their in-memory page size, divided by the sum of all
 storage in use by ZSwap. The script below facilitates the process of determining
-the real gains:
+the actual gains:
 
 
-#+begin_src bash :results verbatin drawer
+#+begin_src bash :results verbatim drawer
 P=$(sudo cat /sys/kernel/debug/zswap/stored_pages)
 S=$(sudo cat /sys/kernel/debug/zswap/pool_total_size)
 PZ=$(getconf PAGESIZE)
@@ -1134,18 +1149,19 @@ to other tasks, such as video encoding.
 
 The impact of using a single thread for test execution has been considered.
 Future work could investigate the performance of the benchmark in a
-multi-threaded environment and compared with the performance of executing Python
-code in consideration with =GIL= (Global Interpreter Lock).
+multi-threaded environment and compare it with the performance of executing
+Python code in consideration of the =GIL= (Global Interpreter Lock).
 
-In an overall the results are positive, by enabling =lz4= and =z3fold=, was possible
-to obtain 251% of the read speed for swapped pages on the best scenario, while
-keeping the same baseline on high entropy scenarios. Along with it, the storage
-capabilities of the device were expanded t o 237% as an average during the
-tests, while maintaining 80% of the actual ram speed on the best scenario, and
-30% on high entropy data sets.
+Overall, the results demonstrate significant improvements. With =lz4= and =z3fold=
+enabled, low entropy data achieves 381.58 mb/s compared to traditional swap's
+150.17 mb/s, representing a 154% improvement. High entropy scenarios maintain
+similar performance to traditional swap (151.28 mb/s vs 149.36 mb/s). The
+storage capabilities were expanded by 237% on average during testing, while
+achieving approximately 79% of RAM performance for low entropy data and
+maintaining equivalent performance for high entropy workloads.
 
 * Appendix
-** Benchmark software source code
+** Benchmark Software Source Code
 
 Compile with:
 
@@ -1161,11 +1177,11 @@ benchmark.
 #include <stdlib.h>
 #include <time.h>
 
-#define DEFAULT_MEM_SIZE 1024 // default benchmark uses 1gb
+#define DEFAULT_MEM_SIZE 1024 // default benchmark uses 1GB
 
 /*
- * Calculate a score which represent the throughput of data
- * in megabytes per second. Start and End are defined in nano seconds.
+ * Calculate a score which represents the throughput of data
+ * in megabytes per second. Start and End are defined in nanoseconds.
  */
 double score(unsigned long start, unsigned long end, size_t size){
   double mbs = size / 1024 / 1024;
@@ -1185,8 +1201,8 @@ void init_sequential(char* mem, size_t size) {
 }
 
 /*
- * Initialize the memory with random values so there are no optimisations nor
- * any hack that can be done during the benchmark to avoid the real acecss.
+ * Initialize the memory with random values so there are no optimizations nor
+ * any hack that can be done during the benchmark to avoid the real access.
  */
 void init_random(char* mem, size_t size) {
     for (size_t i = 0; i < size; i++) {
@@ -1196,8 +1212,8 @@ void init_random(char* mem, size_t size) {
 #pragma GCC push_options
 #pragma GCC optimize ("O0")
 /*
- * Test the access in sequential order, exploit the speculative execution engine
- * on the processor.
+ * Test the access in sequential order, exploiting the speculative execution
+ * engine on the processor.
  */
 double test_sequential_access(char* mem, size_t size) {
     long sum = 0;
@@ -1295,4 +1311,4 @@ int main(int argc, char **argv){
 - [[https://en.wikipedia.org/wiki/IEEE_P1619][IEEE P1619 - Wikipedia]]
 - [[https://lwn.net/Articles/454795/][Transcendent memory in a nutshell {LWN.net}]]
 - [[https://www.infradead.org/~mchehab/kernel_docs/vm/frontswap.html][Frontswap — The Linux Kernel 5.10.0-rc1+ documentation]]
-- [[https://github.com/NixOS/nixpkgs/blob/08d2ac8dbc9750851a5eaae234606f22c795e503/pkgs/os-specific/linux/kernel/common-config.nix#L682][ZSwap option on Nixos Linux kernel configuration code]]
+- [[https://github.com/NixOS/nixpkgs/blob/08d2ac8dbc9750851a5eaae234606f22c795e503/pkgs/os-specific/linux/kernel/common-config.nix#L682][ZSwap option on NixOS Linux kernel configuration code]]
