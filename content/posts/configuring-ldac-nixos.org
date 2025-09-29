@@ -81,14 +81,14 @@ environment.systemPackages = with pkgs; [
 
 * Set the configuration
 
-The configuration can be easily set by:
+The configuration can be set by:
 
 #+begin_src bash :results output
 pactl send-message /card/bluez_card.A4_77_58_4E_DC_D8/bluez switch-codec '"ldac"'
 #+end_src
 
 ** Confirm the change
-To confirm the change the previous stepps can be just repeated, or for easy of
+To confirm the change the previous steps can be repeated, or for ease of
 access, run the following snippet of code:
 
 #+begin_src bash :results output

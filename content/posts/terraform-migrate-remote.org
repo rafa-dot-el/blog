@@ -4,9 +4,9 @@
 #+Tags[]: iac, terraform, devops, shortpost
 #+PROPERTY: header-args :eval never-export
 
-Terraform state management accept an easy migration from one backend to another,
+Terraform state management accepts an easy migration from one backend to another,
 either this backend is remote or local. It detects the actual change on the
-object =backend= within the context =terraform= and apply the proper changes to
+object =backend= within the context =terraform= and applies the proper changes to
 execute the migration.
 
 Within a repository with an already initialized state, run the following:
@@ -16,8 +16,8 @@ terraform init -migrate-state
 #+end_src
 
 * Example migration to Gitlab
-When not defining a backend, Terraform use a local backend by default, to
-migrate to Gitlab just create a =backend.tf= file with the following:
+When not defining a backend, Terraform uses a local backend by default. To
+migrate to Gitlab, create a =backend.tf= file with the following:
 
 #+begin_src terraform :eval never
 terraform {
