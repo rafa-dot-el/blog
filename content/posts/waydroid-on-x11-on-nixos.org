@@ -75,7 +75,7 @@ sudo systemctl stop waydroid-container
 * Appendix
 ** Full code in a module
 The following shows the implementation of the code above, but this version is
-written as a =Nix= module which can be easily incorporated and activated with
+written as a =Nix= module which can be incorporated and activated with
 all the required dependencies. One of the advantages of modules is the
 flexibility of toggling features on and off in the main configuration
 according to environment, user or platform.
