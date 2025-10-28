@@ -4,11 +4,11 @@
 #+Tags[]: psx, rom, games
 #+PROPERTY: header-args :eval never-export
 
-Considering the management of Playstation 1 games and the available formats, a
-comparison between =iso=, =mdf=, =cue+bin= and =chd= to choose what best fits the
-purpose of storage and
+This document examines the management of PlayStation 1 games and the available formats.
+It provides a comparison between =iso=, =mdf=, =cue+bin= and =chd= to determine the optimal
+format for storage purposes.
 
-Convert from =iso= and =mdf=, =cue + bin= to =chd=.
+The focus is on converting from =iso= and =mdf=, =cue + bin= to =chd= format.
 
 * Formats
 ** ISO
@@ -54,7 +54,7 @@ appropriate) file-system metadata.
 
 
 ** ECM
-Just another layer on top of the
+ECM files represent another compression layer applied to existing disc image formats.
 
 * Serial Codes
 - =SCUS=: Used for games released in North America.
@@ -81,7 +81,7 @@ nix-shell -p mdf2iso mame-tools ccd2iso p7zip ecmtools
 #+end_src
 
 * Emulator support
-For Playstation 1 I'm using /Beetle PSX/ the [[https://docs.libretro.com/library/beetle_psx_hw/][documenatation on retroarch]] points
+For PlayStation 1 this analysis uses /Beetle PSX/ the [[https://docs.libretro.com/library/beetle_psx_hw/][documentation on retroarch]] points
 out the supported file formats:
 
 - .cue

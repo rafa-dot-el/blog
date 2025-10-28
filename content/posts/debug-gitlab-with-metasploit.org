@@ -19,7 +19,7 @@ and analysis represents the ideal scenario. Considering the requirements:
     ECS, etc.), so the tool and connection method must accommodate this.
   - The injected binary must have the minimum amount of dependencies possible,
     requiring no further setup.
-  - The binary must include tooling to facilitate the troubleshooting process,
+  - The binary must include tooling to support the troubleshooting process,
     such as tools for downloading, uploading and manipulating files,
     troubleshooting network connections and connectivity issues, and handling
     processes.
@@ -32,11 +32,11 @@ Meterpreter is a powerful and versatile post-exploitation tool widely used in
 the field of cybersecurity. Developed as part of the Metasploit Framework,
 Meterpreter is designed to provide remote access and control over compromised
 systems, allowing penetration testers and security professionals to interact
-with target machines seamlessly.
+with target machines.
 
 Meterpreter fulfills all our requirements: it operates using several
 connection methods including reverse connection, can be generated without any
-dependencies, and includes a comprehensive set of tooling which we can leverage
+dependencies, and includes a complete set of tooling which we can use
 to debug CI/CD pipelines.
 
 * Generate a Meterpreter payload
@@ -47,7 +47,7 @@ used. Once Metasploit is installed, simply run:
 msfvenom -p linux/x64/meterpreter_reverse_tcp LHOST=<IP> LPORT=<PORT> -f elf > meterpreter.elf
 #+end_src
 
-To facilitate the process, on systems with multiple network cards, it is
+For convenience, on systems with multiple network cards, it is
 common for the first one to be a =loopback= interface. The bash function below
 gets the first IP address after the =loopback= interface:
 
