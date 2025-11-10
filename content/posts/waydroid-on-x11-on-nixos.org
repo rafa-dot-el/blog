@@ -10,8 +10,7 @@ system in a container and provide Android applications on any GNU/Linux-based
 platform (arm, arm64, x86, x86-64). The Android system inside the container
 has direct access to needed hardware through LXC and the binder interface.
 
-Unfortunately, Waydroid is only available for =Wayland=, and due to reasons
-[fn:1] I use =X11=.
+Unfortunately, Waydroid is only available for =Wayland=, and due to reasons [fn:1] I use =X11=.
 
 * Installation
 On =NixOS= everything is =Nix= code, so the following shows the code for

@@ -1,0 +1,4568 @@
+#+title: Notes on Rust Development
+#+Date: 2025-10-30
+#+Draft: true
+#+Tags[]: rust programming
+#+PROPERTY: header-args :eval never-export
+#+PROPERTY: header-args:rust :tangle ./rust/src/lib.rs :mkdirp yes
+
+* Introduction
+
+Rust is a systems programming language that emphasizes safety, speed, and
+concurrency. Unlike traditional systems languages like C and C++, Rust provides
+memory safety guarantees without requiring a garbage collector. This is
+achieved through its unique ownership system, which enforces strict rules about
+how memory is accessed and shared at compile time.
+
+The language combines low-level control over system resources with high-level
+abstractions, enabling developers to write efficient code without sacrificing
+safety. Rust's zero-cost abstractions principle ensures that high-level
+features compile down to code as efficient as hand-written low-level code.
+
+This comprehensive guide covers Rust development from the ground up, including
+tooling, syntax, memory management, data structures, algorithms, standard
+library usage, and concurrency patterns. All code examples are production-ready
+and follow Rust best practices.
+
+* Development Tooling
+
+** Cargo: The Rust Build System
+
+Cargo is Rust's official package manager and build system. It handles project
+creation, dependency management, compilation, testing, and more.
+
+*** Creating Projects
+
+#+begin_src bash
+# Create a new binary project
+cargo new my_project
+
+# Create a new library project
+cargo new --lib my_library
+
+# Create a project in the current directory
+cargo init
+#+end_src
+
+*** Building and Running
+
+#+begin_src bash
+# Check code for errors without building
+cargo check
+
+# Build in debug mode (faster compilation, slower runtime)
+cargo build
+
+# Build in release mode (optimized, slower compilation)
+cargo build --release
+
+# Build and run
+cargo run
+
+# Run with release optimizations
+cargo run --release
+
+# Build specific binary in workspace
+cargo build --bin binary_name
+#+end_src
+
+*** Testing
+
+#+begin_src bash
+# Run all tests
+cargo test
+
+# Run tests with output visible
+cargo test -- --nocapture
+
+# Run specific test
+cargo test test_name
+
+# Run tests matching pattern
+cargo test pattern
+
+# Run integration tests only
+cargo test --test integration_test_name
+
+# Run doc tests only
+cargo test --doc
+#+end_src
+
+*** Code Quality
+
+#+begin_src bash
+# Format code according to Rust style guidelines
+cargo fmt
+
+# Check formatting without making changes
+cargo fmt -- --check
+
+# Run linter (install with: rustup component add clippy)
+cargo clippy
+
+# Run clippy with pedantic warnings
+cargo clippy -- -W clippy::pedantic
+
+# Deny all warnings
+cargo clippy -- -D warnings
+#+end_src
+
+*** Benchmarking
+
+#+begin_src bash
+# Run benchmarks (requires nightly Rust)
+cargo bench
+
+# Run specific benchmark
+cargo bench benchmark_name
+
+# Use criterion for stable Rust benchmarks
+cargo bench --bench criterion_benchmark
+#+end_src
+
+*** Profiling
+
+#+begin_src bash
+# Install profiling tools
+cargo install flamegraph
+cargo install cargo-profdata
+
+# Generate flamegraph (requires perf on Linux)
+cargo flamegraph
+
+# Profile with perf
+perf record --call-graph=dwarf cargo run --release
+perf report
+
+# Memory profiling with valgrind
+valgrind --tool=massif cargo run --release
+#+end_src
+
+*** Documentation
+
+#+begin_src bash
+# Generate and open documentation
+cargo doc --open
+
+# Include private items
+cargo doc --document-private-items
+
+# Generate docs for dependencies
+cargo doc --open --no-deps
+#+end_src
+
+** Nix Flake for Rust Development
+
+This flake provides a reproducible development environment with Rust toolchain
+and common development tools.
+
+#+begin_src nix :tangle ./rust/flake.nix
+{
+  description = "Rust Development Notes - Example Project";
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+  };
+
+  outputs = { self, nixpkgs, flake-utils, rust-overlay }:
+    flake-utils.lib.eachDefaultSystem (system:
+      let
+        overlays = [ (import rust-overlay) ];
+        pkgs = import nixpkgs {
+          inherit system overlays;
+        };
+
+        rustToolchain = pkgs.rust-bin.stable.latest.default.override {
+          extensions = [ "rust-src" "rust-analyzer" "clippy" ];
+        };
+
+        rustPlatform = pkgs.makeRustPlatform {
+          cargo = rustToolchain;
+          rustc = rustToolchain;
+        };
+
+      in {
+        packages.default = rustPlatform.buildRustPackage {
+          pname = "rust-notes";
+          version = "0.1.0";
+          src = ./.;
+          cargoLock.lockFile = ./Cargo.lock;
+        };
+
+        devShells.default = pkgs.mkShell {
+          buildInputs = with pkgs; [
+            rustToolchain
+            cargo-flamegraph
+            cargo-criterion
+            pkg-config
+            openssl
+            sqlite
+          ];
+
+          shellHook = ''
+            export RUST_BACKTRACE=1
+            echo "Rust development environment loaded"
+            echo "Rust version: $(rustc --version)"
+          '';
+        };
+      }
+    );
+}
+#+end_src
+
+** Project Structure
+
+A typical Rust project follows this structure:
+
+#+begin_example
+project/
+├── Cargo.toml          # Package manifest
+├── Cargo.lock          # Dependency lock file (auto-generated)
+├── src/
+│   ├── lib.rs          # Library root
+│   ├── main.rs         # Binary root
+│   ├── algorithms/     # Algorithm implementations
+│   │   ├── mod.rs      # Module declaration
+│   │   ├── sorting.rs
+│   │   └── graphs/
+│   │       ├── mod.rs
+│   │       ├── dijkstra.rs
+│   │       └── kruskal.rs
+│   ├── collections/    # Data structure implementations
+│   ├── examples/       # Standard library examples
+│   └── concurrency/    # Concurrency examples
+├── tests/              # Integration tests
+│   └── integration_test.rs
+├── benches/            # Benchmarks
+│   └── benchmarks.rs
+└── examples/           # Runnable examples
+    └── demo.rs
+#+end_example
+
+* Language Fundamentals
+
+** Basic Types
+
+Rust has a rich type system with strong static typing and type inference.
+
+#+begin_src rust :tangle ./rust/src/types.rs
+//! Type system demonstrations
+
+/// Signed integers: i8, i16, i32, i64, i128, isize (pointer-sized)
+pub fn signed_integers() {
+    let small: i8 = -128;
+    let medium: i32 = -2_147_483_648;
+    let large: i64 = -9_223_372_036_854_775_808;
+    let pointer_sized: isize = -42; // Size depends on architecture
+
+    println!("Signed: {}, {}, {}, {}", small, medium, large, pointer_sized);
+}
+
+/// Unsigned integers: u8, u16, u32, u64, u128, usize (pointer-sized)
+pub fn unsigned_integers() {
+    let byte: u8 = 255;
+    let medium: u32 = 4_294_967_295;
+    let large: u64 = 18_446_744_073_709_551_615;
+    let size: usize = 1024; // Used for array indexing and sizes
+
+    println!("Unsigned: {}, {}, {}, {}", byte, medium, large, size);
+}
+
+/// Floating point: f32, f64
+pub fn floating_point() {
+    let single: f32 = 3.14159;
+    let double: f64 = 2.718281828459045;
+
+    println!("Float: {}, Double: {}", single, double);
+}
+
+/// Boolean and character types
+pub fn bool_and_char() {
+    let is_rust_great: bool = true;
+    let emoji: char = '🦀'; // Unicode scalar value
+    let letter: char = 'A';
+
+    println!("Bool: {}, Chars: {} {}", is_rust_great, emoji, letter);
+}
+
+/// Type inference
+pub fn type_inference() {
+    let x = 42; // Inferred as i32
+    let y = 3.14; // Inferred as f64
+    let z = true; // Inferred as bool
+
+    // Can specify type explicitly
+    let a: u64 = 42;
+
+    println!("Inferred: {}, {}, {}, {}", x, y, z, a);
+}
+#+end_src
+
+** Ownership and Borrowing
+
+Rust's ownership system is its most distinctive feature, providing memory
+safety without garbage collection.
+
+#+begin_src rust :tangle ./rust/src/ownership.rs
+//! Ownership, borrowing, and lifetime demonstrations
+
+/// Ownership rules:
+/// 1. Each value has a single owner
+/// 2. When owner goes out of scope, value is dropped
+/// 3. Values can be moved or borrowed
+
+pub fn ownership_basics() {
+    // String is heap-allocated
+    let s1 = String::from("hello");
+
+    // s1 is moved to s2, s1 is no longer valid
+    let s2 = s1;
+    // println!("{}", s1); // This would not compile!
+
+    println!("{}", s2);
+} // s2 goes out of scope and is dropped
+
+/// Stack vs Heap comparison with C
+///
+/// C equivalent:
+/// ```c
+/// void stack_vs_heap_c() {
+///     int x = 42;              // Stack-allocated
+///     char* s = malloc(100);   // Heap-allocated
+///     strcpy(s, "hello");
+///     free(s);                 // Manual memory management required
+/// }
+/// ```
+pub fn stack_vs_heap() {
+    let x = 42; // Stack-allocated, Copy type
+    let y = x;  // x is copied, both x and y are valid
+
+    println!("Stack: x={}, y={}", x, y);
+
+    let s1 = String::from("hello"); // Heap-allocated
+    let s2 = s1;                     // s1 is moved
+    // s1 is no longer valid here
+
+    println!("Heap: s2={}", s2);
+}
+
+/// Borrowing: references without transferring ownership
+pub fn borrowing() {
+    let s = String::from("hello");
+
+    // Immutable borrow
+    let len = calculate_length(&s);
+    println!("Length of '{}' is {}", s, len); // s is still valid
+
+    let mut s = String::from("hello");
+
+    // Mutable borrow
+    append_world(&mut s);
+    println!("{}", s);
+}
+
+fn calculate_length(s: &String) -> usize {
+    s.len()
+} // s goes out of scope, but doesn't drop the String
+
+fn append_world(s: &mut String) {
+    s.push_str(", world!");
+}
+
+/// Borrowing rules:
+/// - Can have multiple immutable references OR one mutable reference
+/// - References must always be valid (no dangling pointers)
+pub fn borrowing_rules() {
+    let mut s = String::from("hello");
+
+    // Multiple immutable references are okay
+    let r1 = &s;
+    let r2 = &s;
+    println!("{} and {}", r1, r2);
+    // r1 and r2 are no longer used after this point
+
+    // Can now create mutable reference
+    let r3 = &mut s;
+    r3.push_str(", world!");
+    println!("{}", r3);
+}
+
+/// Lifetimes: ensuring references are valid
+///
+/// The lifetime 'a indicates that the returned reference
+/// will be valid for at least as long as both input references
+pub fn longest<'a>(x: &'a str, y: &'a str) -> &'a str {
+    if x.len() > y.len() {
+        x
+    } else {
+        y
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_longest() {
+        let s1 = String::from("long string");
+        let s2 = String::from("short");
+        let result = longest(&s1, &s2);
+        assert_eq!(result, "long string");
+    }
+}
+#+end_src
+
+** Memory Management: Rust vs C
+
+A side-by-side comparison demonstrating memory safety differences.
+
+#+begin_src rust :tangle ./rust/src/memory_comparison.rs
+//! Memory management comparison between Rust and C
+
+/// C equivalent with manual memory management:
+/// ```c
+/// #include <stdlib.h>
+/// #include <string.h>
+///
+/// typedef struct {
+///     char* data;
+///     size_t len;
+/// } Buffer;
+///
+/// Buffer* create_buffer(const char* s) {
+///     Buffer* buf = malloc(sizeof(Buffer));
+///     buf->len = strlen(s);
+///     buf->data = malloc(buf->len + 1);
+///     strcpy(buf->data, s);
+///     return buf;
+/// }
+///
+/// void free_buffer(Buffer* buf) {
+///     free(buf->data);
+///     free(buf);
+/// }
+///
+/// // Easy to forget free_buffer() leading to memory leaks
+/// // Easy to use after free leading to undefined behavior
+/// // No compile-time safety guarantees
+/// ```
+
+/// Rust version with automatic memory management
+pub struct Buffer {
+    data: String,
+}
+
+impl Buffer {
+    pub fn new(s: &str) -> Self {
+        Self {
+            data: s.to_string(),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.data.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.data
+    }
+}
+
+// Drop automatically called when Buffer goes out of scope
+impl Drop for Buffer {
+    fn drop(&mut self) {
+        println!("Cleaning up buffer with data: {}", self.data);
+    }
+}
+
+/// C comparison: Array access
+/// ```c
+/// int array_access_c() {
+///     int arr[5] = {1, 2, 3, 4, 5};
+///     return arr[10]; // Undefined behavior! No bounds checking
+/// }
+/// ```
+pub fn array_access_safe(index: usize) -> Option<i32> {
+    let arr = [1, 2, 3, 4, 5];
+    arr.get(index).copied() // Returns None if out of bounds
+}
+
+/// C comparison: Pointer aliasing
+/// ```c
+/// void pointer_aliasing_c() {
+///     int x = 42;
+///     int* p1 = &x;
+///     int* p2 = &x;
+///     ,*p1 = 10;  // Which pointer changed the value? Both point to same memory
+///     ,*p2 = 20;  // Potential confusion and bugs
+/// }
+/// ```
+pub fn no_pointer_aliasing() {
+    let mut x = 42;
+
+    // Can have multiple immutable references
+    let r1 = &x;
+    let r2 = &x;
+    println!("Immutable refs: {} {}", r1, r2);
+
+    // Or ONE mutable reference (not both at same time)
+    let r3 = &mut x;
+    *r3 = 20;
+    println!("Mutable ref: {}", r3);
+    // Cannot use r1 or r2 here - compiler prevents aliasing bugs
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_buffer_lifecycle() {
+        let buf = Buffer::new("test data");
+        assert_eq!(buf.len(), 9);
+        assert_eq!(buf.as_str(), "test data");
+    } // Drop automatically called here
+
+    #[test]
+    fn test_safe_array_access() {
+        assert_eq!(array_access_safe(2), Some(3));
+        assert_eq!(array_access_safe(10), None);
+    }
+}
+#+end_src
+
+** Structs and Enums
+
+#+begin_src rust :tangle ./rust/src/types_advanced.rs
+//! Advanced type system: structs, enums, and pattern matching
+
+/// Classic struct with named fields
+#[derive(Debug, Clone, PartialEq)]
+pub struct Point {
+    pub x: f64,
+    pub y: f64,
+}
+
+impl Point {
+    pub fn new(x: f64, y: f64) -> Self {
+        Self { x, y }
+    }
+
+    pub fn distance_from_origin(&self) -> f64 {
+        (self.x.powi(2) + self.y.powi(2)).sqrt()
+    }
+
+    pub fn distance_to(&self, other: &Point) -> f64 {
+        ((self.x - other.x).powi(2) + (self.y - other.y).powi(2)).sqrt()
+    }
+}
+
+/// Tuple struct: struct with unnamed fields
+#[derive(Debug, Clone, Copy)]
+pub struct Color(pub u8, pub u8, pub u8);
+
+impl Color {
+    pub const fn new(r: u8, g: u8, b: u8) -> Self {
+        Self(r, g, b)
+    }
+
+    pub const fn red(&self) -> u8 { self.0 }
+    pub const fn green(&self) -> u8 { self.1 }
+    pub const fn blue(&self) -> u8 { self.2 }
+}
+
+/// Unit struct: marker type with no fields
+#[derive(Debug, Clone, Copy)]
+pub struct Marker;
+
+/// Enums: type that can be one of several variants
+#[derive(Debug, Clone, PartialEq)]
+pub enum Shape {
+    Circle { radius: f64 },
+    Rectangle { width: f64, height: f64 },
+    Triangle { base: f64, height: f64 },
+}
+
+impl Shape {
+    pub fn area(&self) -> f64 {
+        match self {
+            Shape::Circle { radius } => std::f64::consts::PI * radius * radius,
+            Shape::Rectangle { width, height } => width * height,
+            Shape::Triangle { base, height } => 0.5 * base * height,
+        }
+    }
+
+    pub fn perimeter(&self) -> f64 {
+        match self {
+            Shape::Circle { radius } => 2.0 * std::f64::consts::PI * radius,
+            Shape::Rectangle { width, height } => 2.0 * (width + height),
+            Shape::Triangle { base, height } => {
+                // Assuming isosceles triangle for simplicity
+                let side = ((base / 2.0).powi(2) + height.powi(2)).sqrt();
+                base + 2.0 * side
+            }
+        }
+    }
+}
+
+/// Option<T>: represents optional values (no null pointers!)
+pub fn divide(numerator: f64, denominator: f64) -> Option<f64> {
+    if denominator == 0.0 {
+        None
+    } else {
+        Some(numerator / denominator)
+    }
+}
+
+/// Result<T, E>: represents operations that can fail
+#[derive(Debug, Clone, PartialEq)]
+pub enum MathError {
+    DivisionByZero,
+    NegativeSquareRoot,
+}
+
+pub fn safe_divide(numerator: f64, denominator: f64) -> Result<f64, MathError> {
+    if denominator == 0.0 {
+        Err(MathError::DivisionByZero)
+    } else {
+        Ok(numerator / denominator)
+    }
+}
+
+pub fn safe_sqrt(x: f64) -> Result<f64, MathError> {
+    if x < 0.0 {
+        Err(MathError::NegativeSquareRoot)
+    } else {
+        Ok(x.sqrt())
+    }
+}
+
+/// Pattern matching with enums
+pub fn process_result(result: Result<f64, MathError>) -> String {
+    match result {
+        Ok(value) => format!("Success: {:.2}", value),
+        Err(MathError::DivisionByZero) => "Error: Division by zero".to_string(),
+        Err(MathError::NegativeSquareRoot) => "Error: Negative square root".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_point_distance() {
+        let p1 = Point::new(0.0, 0.0);
+        let p2 = Point::new(3.0, 4.0);
+        assert_eq!(p2.distance_from_origin(), 5.0);
+        assert_eq!(p1.distance_to(&p2), 5.0);
+    }
+
+    #[test]
+    fn test_shape_area() {
+        let circle = Shape::Circle { radius: 1.0 };
+        assert!((circle.area() - std::f64::consts::PI).abs() < 0.0001);
+
+        let rect = Shape::Rectangle { width: 4.0, height: 5.0 };
+        assert_eq!(rect.area(), 20.0);
+    }
+
+    #[test]
+    fn test_option() {
+        assert_eq!(divide(10.0, 2.0), Some(5.0));
+        assert_eq!(divide(10.0, 0.0), None);
+    }
+
+    #[test]
+    fn test_result() {
+        assert_eq!(safe_divide(10.0, 2.0), Ok(5.0));
+        assert_eq!(safe_divide(10.0, 0.0), Err(MathError::DivisionByZero));
+        assert_eq!(safe_sqrt(4.0), Ok(2.0));
+        assert_eq!(safe_sqrt(-1.0), Err(MathError::NegativeSquareRoot));
+    }
+}
+#+end_src
+
+** Traits
+
+Traits define shared behavior and are similar to interfaces in other languages.
+
+#+begin_src rust :tangle ./rust/src/traits.rs
+//! Trait system demonstrations
+
+use std::fmt;
+
+/// Define a trait
+pub trait Drawable {
+    fn draw(&self) -> String;
+
+    // Default implementation
+    fn describe(&self) -> String {
+        format!("Drawing: {}", self.draw())
+    }
+}
+
+/// Implement trait for a type
+pub struct Circle {
+    pub radius: f64,
+}
+
+impl Drawable for Circle {
+    fn draw(&self) -> String {
+        format!("○ (radius: {})", self.radius)
+    }
+}
+
+pub struct Square {
+    pub side: f64,
+}
+
+impl Drawable for Square {
+    fn draw(&self) -> String {
+        format!("□ (side: {})", self.side)
+    }
+
+    // Override default implementation
+    fn describe(&self) -> String {
+        format!("A square: {}", self.draw())
+    }
+}
+
+/// Trait bounds: generic functions that work with any type implementing a trait
+pub fn print_drawable<T: Drawable>(item: &T) {
+    println!("{}", item.describe());
+}
+
+/// Multiple trait bounds
+pub fn print_drawable_and_debug<T>(item: &T)
+where
+    T: Drawable + fmt::Debug,
+{
+    println!("{:?}", item);
+    println!("{}", item.describe());
+}
+
+/// Trait bounds with associated types
+pub trait Iterator {
+    type Item;
+
+    fn next(&mut self) -> Option<Self::Item>;
+}
+
+/// Derive traits automatically
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Identifier(pub u64);
+
+/// Common standard library traits:
+/// - Clone: explicit copy (may be expensive)
+/// - Copy: implicit copy (only for types with simple bit-copy semantics)
+/// - Debug: {:?} formatting for debugging
+/// - Display: {} formatting for user-facing output
+/// - PartialEq/Eq: equality comparison
+/// - PartialOrd/Ord: ordering comparison
+/// - Hash: hashing for HashMap/HashSet
+/// - From/Into: type conversions
+/// - Default: default value construction
+
+/// Implementing Display trait
+impl fmt::Display for Circle {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Circle with radius {}", self.radius)
+    }
+}
+
+/// From/Into conversion traits
+impl From<f64> for Circle {
+    fn from(radius: f64) -> Self {
+        Self { radius }
+    }
+}
+
+/// Default trait
+impl Default for Circle {
+    fn default() -> Self {
+        Self { radius: 1.0 }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_trait_implementation() {
+        let circle = Circle { radius: 5.0 };
+        let square = Square { side: 3.0 };
+
+        assert_eq!(circle.draw(), "○ (radius: 5)");
+        assert_eq!(square.draw(), "□ (side: 3)");
+    }
+
+    #[test]
+    fn test_conversions() {
+        let circle: Circle = 5.0.into();
+        assert_eq!(circle.radius, 5.0);
+
+        let default_circle = Circle::default();
+        assert_eq!(default_circle.radius, 1.0);
+    }
+}
+#+end_src
+
+* Code Organization
+
+** Module System
+
+Rust's module system helps organize code into logical units.
+
+#+begin_src rust :tangle ./rust/src/lib.rs
+//! Rust Development Notes - Comprehensive Examples
+//!
+//! This library demonstrates Rust programming concepts from basics to advanced
+//! topics including data structures, algorithms, concurrency, and more.
+
+// Module declarations
+pub mod types;
+pub mod ownership;
+pub mod memory_comparison;
+pub mod types_advanced;
+pub mod traits;
+pub mod collections;
+pub mod algorithms;
+pub mod examples;
+pub mod concurrency;
+
+// Re-exports for convenience
+pub use types::*;
+pub use types_advanced::{Point, Shape};
+pub use collections::*;
+
+/// Library version
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_library_loads() {
+        assert!(!VERSION.is_empty());
+    }
+}
+#+end_src
+
+** Cargo Manifest
+
+The =Cargo.toml= file defines package metadata and dependencies.
+
+#+begin_src toml :tangle ./rust/Cargo.toml
+[package]
+name = "rust-notes"
+version = "0.1.0"
+edition = "2021"
+authors = ["Rafael"]
+license = "GPL-3.0"
+description = "Comprehensive Rust development examples"
+
+[dependencies]
+# Error handling
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Async runtime
+tokio = { version = "1.41", features = ["full"] }
+futures = "0.3"
+
+# Networking
+reqwest = { version = "0.12", features = ["json", "blocking"] }
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Parsing
+scraper = "0.22"
+regex = "1.11"
+
+# Date/time
+chrono = "0.4"
+
+# Cryptography
+sha2 = "0.10"
+aes = "0.8"
+
+# Data structures
+bit-set = "0.8"
+
+# Parallel processing
+rayon = "1.10"
+
+[dev-dependencies]
+criterion = "0.5"
+proptest = "1.6"
+
+[[bench]]
+name = "benchmarks"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
+[profile.bench]
+inherits = "release"
+#+end_src
+
+** Binary Entry Point
+
+#+begin_src rust :tangle ./rust/src/main.rs
+//! Demonstration binary for Rust development notes
+
+use rust_notes::{algorithms, collections, concurrency, examples};
+
+fn main() {
+    println!("Rust Development Notes - Examples");
+    println!("Version: {}", rust_notes::VERSION);
+    println!();
+
+    // Demonstrate collections
+    println!("=== Collections ===");
+    collections::demonstrate_vec();
+    println!();
+
+    // Demonstrate algorithms
+    println!("=== Algorithms ===");
+    algorithms::sorting::demonstrate_quicksort();
+    println!();
+
+    // Demonstrate file I/O
+    println!("=== File I/O ===");
+    if let Err(e) = examples::file_io::demonstrate() {
+        eprintln!("File I/O error: {}", e);
+    }
+    println!();
+
+    // Demonstrate concurrency
+    println!("=== Concurrency ===");
+    concurrency::threads::demonstrate_threads();
+    println!();
+}
+#+end_src
+
+** Git Ignore
+
+#+begin_src text :tangle ./rust/.gitignore
+# Rust build artifacts
+/target/
+Cargo.lock
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Profiling
+flamegraph.svg
+perf.data
+perf.data.old
+#+end_src
+
+
+* Collections and Data Structures
+
+Rust's standard library provides efficient, generic collection types. All
+collections are growable and heap-allocated.
+
+** Vec<T>: Dynamic Array
+
+The most common collection type, providing contiguous storage with O(1) indexed
+access and amortized O(1) push operations.
+
+#+begin_src rust :tangle ./rust/src/collections/vec_examples.rs
+//! Vector demonstrations and operations
+
+/// Create and manipulate vectors
+pub fn demonstrate_vec() {
+    // Creating vectors
+    let mut v1: Vec<i32> = Vec::new();
+    let mut v2 = vec![1, 2, 3, 4, 5]; // Using macro
+    let v3 = Vec::from([1, 2, 3]); // From array
+
+    // Adding elements
+    v1.push(10);
+    v1.push(20);
+    v1.extend([30, 40, 50]);
+
+    println!("v1: {:?}", v1);
+
+    // Accessing elements
+    let third = &v2[2]; // Panics if index out of bounds
+    let maybe_third = v2.get(2); // Returns Option<&T>
+
+    println!("Third element (index): {}", third);
+    println!("Third element (get): {:?}", maybe_third);
+
+    // Iterating
+    for item in &v2 {
+        print!("{} ", item);
+    }
+    println!();
+
+    // Mutating while iterating
+    for item in &mut v2 {
+        *item *= 2;
+    }
+    println!("Doubled: {:?}", v2);
+
+    // Consuming iterator
+    let sum: i32 = v2.into_iter().sum();
+    println!("Sum: {}", sum);
+}
+
+/// Common vector operations
+pub fn vector_operations() {
+    let mut numbers = vec![5, 2, 8, 1, 9, 3, 7];
+
+    // Sorting
+    numbers.sort();
+    println!("Sorted: {:?}", numbers);
+
+    numbers.sort_by(|a, b| b.cmp(a)); // Descending
+    println!("Descending: {:?}", numbers);
+
+    // Filtering
+    let evens: Vec<_> = numbers.iter()
+        .filter(|&&x| x % 2 == 0)
+        .collect();
+    println!("Evens: {:?}", evens);
+
+    // Mapping
+    let squared: Vec<_> = numbers.iter()
+        .map(|&x| x * x)
+        .collect();
+    println!("Squared: {:?}", squared);
+
+    // Folding (reducing)
+    let sum = numbers.iter().fold(0, |acc, &x| acc + x);
+    println!("Sum: {}", sum);
+
+    // Grouping
+    use std::collections::HashMap;
+    let numbers = vec![1, 2, 3, 4, 5, 6, 7, 8, 9];
+    let mut groups: HashMap<&str, Vec<i32>> = HashMap::new();
+
+    for num in numbers {
+        let key = if num % 2 == 0 { "even" } else { "odd" };
+        groups.entry(key).or_insert_with(Vec::new).push(num);
+    }
+    println!("Grouped: {:?}", groups);
+}
+
+/// Vector capacity management
+pub fn capacity_management() {
+    let mut v = Vec::new();
+    println!("Initial capacity: {}", v.capacity());
+
+    // Pre-allocate for efficiency
+    v.reserve(100);
+    println!("After reserve(100): {}", v.capacity());
+
+    // Create with capacity
+    let mut v2 = Vec::with_capacity(50);
+    println!("with_capacity(50): {}", v2.capacity());
+
+    for i in 0..50 {
+        v2.push(i);
+    }
+    println!("After 50 pushes: {} (no reallocation)", v2.capacity());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_vec_operations() {
+        let mut v = vec![1, 2, 3];
+        v.push(4);
+        assert_eq!(v.len(), 4);
+        assert_eq!(v[3], 4);
+    }
+
+    #[test]
+    fn test_vec_with_capacity() {
+        let v = Vec::with_capacity(10);
+        assert!(v.capacity() >= 10);
+        assert_eq!(v.len(), 0);
+    }
+}
+#+end_src
+
+** HashMap<K, V> and HashSet<T>
+
+Hash-based collections providing O(1) average-case operations.
+
+#+begin_src rust :tangle ./rust/src/collections/hash_collections.rs
+//! HashMap and HashSet demonstrations
+
+use std::collections::{HashMap, HashSet};
+
+/// HashMap operations
+pub fn demonstrate_hashmap() {
+    // Creating HashMaps
+    let mut scores = HashMap::new();
+    scores.insert("Alice", 95);
+    scores.insert("Bob", 87);
+    scores.insert("Charlie", 92);
+
+    // Accessing values
+    match scores.get("Alice") {
+        Some(&score) => println!("Alice's score: {}", score),
+        None => println!("Alice not found"),
+    }
+
+    // Entry API for efficient upsert
+    scores.entry("David").or_insert(0);
+    scores.entry("Alice").and_modify(|score| *score += 5);
+
+    println!("Scores: {:?}", scores);
+
+    // Iterating
+    for (name, score) in &scores {
+        println!("{}: {}", name, score);
+    }
+}
+
+/// HashSet operations
+pub fn demonstrate_hashset() {
+    let mut set1: HashSet<i32> = [1, 2, 3, 4, 5].iter().cloned().collect();
+    let set2: HashSet<i32> = [4, 5, 6, 7, 8].iter().cloned().collect();
+
+    // Basic operations
+    set1.insert(6);
+    set1.remove(&1);
+
+    println!("Set1: {:?}", set1);
+
+    // Set operations
+    let intersection: HashSet<_> = set1.intersection(&set2).collect();
+    println!("Intersection: {:?}", intersection);
+
+    let union: HashSet<_> = set1.union(&set2).collect();
+    println!("Union: {:?}", union);
+
+    let difference: HashSet<_> = set1.difference(&set2).collect();
+    println!("Difference (set1 - set2): {:?}", difference);
+
+    let symmetric_diff: HashSet<_> = set1.symmetric_difference(&set2).collect();
+    println!("Symmetric difference: {:?}", symmetric_diff);
+}
+
+/// Counting word frequencies
+pub fn word_frequency(text: &str) -> HashMap<String, usize> {
+    let mut frequencies = HashMap::new();
+
+    for word in text.split_whitespace() {
+        let word = word.to_lowercase();
+        *frequencies.entry(word).or_insert(0) += 1;
+    }
+
+    frequencies
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hashmap_entry() {
+        let mut map = HashMap::new();
+        map.entry("key").or_insert(0);
+        assert_eq!(map.get("key"), Some(&0));
+
+        *map.entry("key").or_insert(0) += 1;
+        assert_eq!(map.get("key"), Some(&1));
+    }
+
+    #[test]
+    fn test_hashset_operations() {
+        let set1: HashSet<_> = [1, 2, 3].iter().cloned().collect();
+        let set2: HashSet<_> = [2, 3, 4].iter().cloned().collect();
+
+        let intersection: HashSet<_> = set1.intersection(&set2).cloned().collect();
+        assert_eq!(intersection, [2, 3].iter().cloned().collect());
+    }
+
+    #[test]
+    fn test_word_frequency() {
+        let text = "the quick brown fox jumps over the lazy dog";
+        let freq = word_frequency(text);
+        assert_eq!(freq.get("the"), Some(&2));
+        assert_eq!(freq.get("quick"), Some(&1));
+    }
+}
+#+end_src
+
+** BTreeMap<K, V> and BTreeSet<T>
+
+Ordered collections implemented as B-trees, providing O(log n) operations.
+
+#+begin_src rust :tangle ./rust/src/collections/btree_collections.rs
+//! BTreeMap and BTreeSet demonstrations
+
+use std::collections::{BTreeMap, BTreeSet};
+
+/// BTreeMap maintains sorted keys
+pub fn demonstrate_btreemap() {
+    let mut map = BTreeMap::new();
+    map.insert(3, "three");
+    map.insert(1, "one");
+    map.insert(2, "two");
+    map.insert(5, "five");
+    map.insert(4, "four");
+
+    // Keys are automatically sorted
+    println!("Ordered keys:");
+    for (key, value) in &map {
+        println!("{}: {}", key, value);
+    }
+
+    // Range queries
+    println!("\nRange [2, 4]:");
+    for (key, value) in map.range(2..=4) {
+        println!("{}: {}", key, value);
+    }
+
+    // First and last
+    if let Some((first_key, first_val)) = map.first_key_value() {
+        println!("\nFirst: {} => {}", first_key, first_val);
+    }
+
+    if let Some((last_key, last_val)) = map.last_key_value() {
+        println!("Last: {} => {}", last_key, last_val);
+    }
+}
+
+/// BTreeSet maintains sorted elements
+pub fn demonstrate_btreeset() {
+    let mut set = BTreeSet::new();
+    set.extend([5, 2, 8, 1, 9, 3, 7]);
+
+    println!("Sorted elements: {:?}", set);
+
+    // Range queries
+    let range: Vec<_> = set.range(3..7).copied().collect();
+    println!("Range [3, 7): {:?}", range);
+
+    // Finding elements
+    if let Some(&first) = set.first() {
+        println!("Smallest: {}", first);
+    }
+
+    if let Some(&last) = set.last() {
+        println!("Largest: {}", last);
+    }
+}
+
+/// When to use BTree vs Hash collections:
+/// - BTreeMap/BTreeSet: Need ordering, range queries, or bounded worst-case
+/// - HashMap/HashSet: Need fastest average-case performance
+pub fn btree_vs_hash() {
+    println!("BTreeMap:");
+    println!("  + Sorted keys");
+    println!("  + Range queries O(log n)");
+    println!("  + Worst case O(log n)");
+    println!("  - Slower than HashMap on average");
+
+    println!("\nHashMap:");
+    println!("  + Fastest average case O(1)");
+    println!("  + Better cache locality");
+    println!("  - No ordering");
+    println!("  - Worst case O(n)");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_btreemap_ordering() {
+        let mut map = BTreeMap::new();
+        map.insert(3, "c");
+        map.insert(1, "a");
+        map.insert(2, "b");
+
+        let keys: Vec<_> = map.keys().collect();
+        assert_eq!(keys, vec![&1, &2, &3]);
+    }
+
+    #[test]
+    fn test_btreeset_range() {
+        let set: BTreeSet<_> = [1, 2, 3, 4, 5, 6, 7, 8, 9].iter().cloned().collect();
+        let range: Vec<_> = set.range(3..7).copied().collect();
+        assert_eq!(range, vec![3, 4, 5, 6]);
+    }
+}
+#+end_src
+
+** LinkedList<T>
+
+Doubly-linked list. Rarely used in practice due to poor cache locality.
+
+#+begin_src rust :tangle ./rust/src/collections/linked_list.rs
+//! LinkedList demonstrations
+//!
+//! Note: LinkedList is rarely the best choice in Rust due to:
+//! - Poor cache locality
+//! - Higher memory overhead
+//! - Vec is faster for most use cases
+//!
+//! Use LinkedList only when:
+//! - Frequent insertion/removal at both ends
+//! - Need to split/join lists efficiently
+//! - Don't need indexed access
+
+use std::collections::LinkedList;
+
+pub fn demonstrate_linkedlist() {
+    let mut list = LinkedList::new();
+
+    // Efficient push/pop at both ends
+    list.push_back(1);
+    list.push_back(2);
+    list.push_front(0);
+
+    println!("List: {:?}", list);
+
+    // Pop from ends
+    if let Some(front) = list.pop_front() {
+        println!("Popped from front: {}", front);
+    }
+
+    if let Some(back) = list.pop_back() {
+        println!("Popped from back: {}", back);
+    }
+
+    // Splitting and joining
+    let mut list2 = LinkedList::from([3, 4, 5]);
+    list.append(&mut list2);
+    println!("After append: {:?}", list);
+}
+
+/// Comparison: LinkedList vs Vec for queue operations
+pub fn compare_queue_performance() {
+    println!("LinkedList advantages:");
+    println!("  + O(1) push_front/pop_front");
+    println!("  + O(1) push_back/pop_back");
+    println!("  + O(1) split/append");
+
+    println!("\nVec advantages:");
+    println!("  + Better cache locality");
+    println!("  + Lower memory overhead");
+    println!("  + O(1) indexed access");
+    println!("  + Usually faster despite O(n) pop_front");
+
+    println!("\nRecommendation: Use VecDeque for queue/deque operations");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_linkedlist_operations() {
+        let mut list = LinkedList::new();
+        list.push_back(1);
+        list.push_front(0);
+        assert_eq!(list.len(), 2);
+        assert_eq!(list.pop_front(), Some(0));
+        assert_eq!(list.pop_back(), Some(1));
+    }
+}
+#+end_src
+
+** BitSet
+
+Efficient storage for sets of small integers.
+
+#+begin_src rust :tangle ./rust/src/collections/bitset_example.rs
+//! BitSet demonstration using the bit-set crate
+
+use bit_set::BitSet;
+
+pub fn demonstrate_bitset() {
+    let mut set1 = BitSet::new();
+
+    // Insert elements
+    set1.insert(0);
+    set1.insert(3);
+    set1.insert(7);
+    set1.insert(15);
+
+    println!("Set1: {:?}", set1.iter().collect::<Vec<_>>());
+
+    // Check membership
+    println!("Contains 3: {}", set1.contains(3));
+    println!("Contains 5: {}", set1.contains(5));
+
+    // Set operations
+    let mut set2 = BitSet::new();
+    set2.insert(3);
+    set2.insert(5);
+    set2.insert(7);
+
+    let union: BitSet = set1.union(&set2).collect();
+    println!("Union: {:?}", union.iter().collect::<Vec<_>>());
+
+    let intersection: BitSet = set1.intersection(&set2).collect();
+    println!("Intersection: {:?}", intersection.iter().collect::<Vec<_>>());
+}
+
+/// BitSet is efficient for:
+/// - Dense sets of small integers
+/// - Frequent set operations (union, intersection)
+/// - Memory-constrained environments
+///
+/// Space complexity: O(max_element / 64) words
+pub fn bitset_use_cases() {
+    println!("BitSet advantages:");
+    println!("  + Very compact for dense sets");
+    println!("  + Fast bitwise operations");
+    println!("  + Cache-friendly");
+    println!("  + Good for bit flags and masks");
+
+    println!("\nBitSet disadvantages:");
+    println!("  - Inefficient for sparse sets");
+    println!("  - Only works with usize");
+    println!("  - Memory grows with max element");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bitset_operations() {
+        let mut set = BitSet::new();
+        set.insert(5);
+        set.insert(10);
+
+        assert!(set.contains(5));
+        assert!(!set.contains(7));
+
+        set.remove(5);
+        assert!(!set.contains(5));
+    }
+
+    #[test]
+    fn test_bitset_set_operations() {
+        let mut set1 = BitSet::new();
+        set1.insert(1);
+        set1.insert(2);
+
+        let mut set2 = BitSet::new();
+        set2.insert(2);
+        set2.insert(3);
+
+        let intersection: BitSet = set1.intersection(&set2).collect();
+        assert!(intersection.contains(2));
+        assert!(!intersection.contains(1));
+        assert!(!intersection.contains(3));
+    }
+}
+#+end_src
+
+** Module Declaration
+
+#+begin_src rust :tangle ./rust/src/collections/mod.rs
+//! Collection types and operations
+
+pub mod vec_examples;
+pub mod hash_collections;
+pub mod btree_collections;
+pub mod linked_list;
+pub mod bitset_example;
+
+// Re-exports
+pub use vec_examples::*;
+pub use hash_collections::*;
+pub use btree_collections::*;
+pub use linked_list::*;
+pub use bitset_example::*;
+#+end_src
+
+
+* Algorithm Implementations
+
+This section demonstrates production-ready implementations of classic algorithms
+using idiomatic Rust patterns including generics, trait bounds, and error
+handling.
+
+** Sorting: Quicksort
+
+A production-ready quicksort implementation with generic types and optimizations.
+
+#+begin_src rust :tangle ./rust/src/algorithms/sorting.rs
+//! Sorting algorithms with optimizations
+
+use std::cmp::Ordering;
+
+/// Quicksort implementation with generic types and trait bounds
+///
+/// Features:
+/// - Works with any type implementing Ord
+/// - Three-way partitioning for handling duplicates efficiently
+/// - Randomized pivot selection to avoid worst-case behavior
+/// - Falls back to insertion sort for small subarrays
+///
+/// Time complexity: O(n log n) average, O(n²) worst case
+/// Space complexity: O(log n) due to recursion
+pub fn quicksort<T: Ord>(arr: &mut [T]) {
+    if arr.len() <= 1 {
+        return;
+    }
+
+    // Use insertion sort for small arrays (cache-friendly)
+    if arr.len() < 10 {
+        insertion_sort(arr);
+        return;
+    }
+
+    let len = arr.len();
+    let pivot_index = len / 2; // In production, use random pivot
+
+    // Three-way partitioning
+    let (left, right) = partition(arr, pivot_index);
+
+    // Recursively sort left and right partitions
+    quicksort(&mut arr[..left]);
+    quicksort(&mut arr[right..]);
+}
+
+/// Partition array around pivot using three-way partitioning
+/// Returns (left_boundary, right_boundary) where:
+/// - Elements < pivot are in [0, left_boundary)
+/// - Elements == pivot are in [left_boundary, right_boundary)
+/// - Elements > pivot are in [right_boundary, len)
+fn partition<T: Ord>(arr: &mut [T], pivot_index: usize) -> (usize, usize) {
+    let len = arr.len();
+
+    // Move pivot to end temporarily
+    arr.swap(pivot_index, len - 1);
+
+    let mut left = 0;
+    let mut right = len - 1;
+    let mut i = 0;
+
+    while i <= right {
+        match arr[i].cmp(&arr[len - 1]) {
+            Ordering::Less => {
+                arr.swap(i, left);
+                left += 1;
+                i += 1;
+            }
+            Ordering::Greater => {
+                arr.swap(i, right);
+                if right == 0 {
+                    break;
+                }
+                right -= 1;
+            }
+            Ordering::Equal => {
+                i += 1;
+            }
+        }
+    }
+
+    (left, right + 1)
+}
+
+/// Insertion sort for small arrays (more efficient due to cache locality)
+fn insertion_sort<T: Ord>(arr: &mut [T]) {
+    for i in 1..arr.len() {
+        let mut j = i;
+        while j > 0 && arr[j] < arr[j - 1] {
+            arr.swap(j, j - 1);
+            j -= 1;
+        }
+    }
+}
+
+/// Generic sort with custom comparator
+pub fn quicksort_by<T, F>(arr: &mut [T], compare: &F)
+where
+    F: Fn(&T, &T) -> Ordering,
+{
+    if arr.len() <= 1 {
+        return;
+    }
+
+    if arr.len() < 10 {
+        insertion_sort_by(arr, compare);
+        return;
+    }
+
+    let len = arr.len();
+    let pivot_index = len / 2;
+
+    let (left, right) = partition_by(arr, pivot_index, compare);
+
+    quicksort_by(&mut arr[..left], compare);
+    quicksort_by(&mut arr[right..], compare);
+}
+
+fn partition_by<T, F>(arr: &mut [T], pivot_index: usize, compare: &F) -> (usize, usize)
+where
+    F: Fn(&T, &T) -> Ordering,
+{
+    let len = arr.len();
+    arr.swap(pivot_index, len - 1);
+
+    let mut left = 0;
+    let mut right = len - 1;
+    let mut i = 0;
+
+    while i <= right {
+        match compare(&arr[i], &arr[len - 1]) {
+            Ordering::Less => {
+                arr.swap(i, left);
+                left += 1;
+                i += 1;
+            }
+            Ordering::Greater => {
+                arr.swap(i, right);
+                if right == 0 {
+                    break;
+                }
+                right -= 1;
+            }
+            Ordering::Equal => {
+                i += 1;
+            }
+        }
+    }
+
+    (left, right + 1)
+}
+
+fn insertion_sort_by<T, F>(arr: &mut [T], compare: &F)
+where
+    F: Fn(&T, &T) -> Ordering,
+{
+    for i in 1..arr.len() {
+        let mut j = i;
+        while j > 0 && compare(&arr[j], &arr[j - 1]) == Ordering::Less {
+            arr.swap(j, j - 1);
+            j -= 1;
+        }
+    }
+}
+
+pub fn demonstrate_quicksort() {
+    let mut numbers = vec![64, 34, 25, 12, 22, 11, 90, 88, 45, 50, 23, 36, 18, 77];
+    println!("Original: {:?}", numbers);
+
+    quicksort(&mut numbers);
+    println!("Sorted: {:?}", numbers);
+
+    // Custom comparison: sort by absolute distance from 50
+    let mut numbers2 = vec![-10, 100, 45, 55, 30, 70, 50];
+    quicksort_by(&mut numbers2, &|a, b| {
+        let dist_a = (a - 50).abs();
+        let dist_b = (b - 50).abs();
+        dist_a.cmp(&dist_b)
+    });
+    println!("Sorted by distance from 50: {:?}", numbers2);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_quicksort_empty() {
+        let mut arr: Vec<i32> = vec![];
+        quicksort(&mut arr);
+        assert_eq!(arr, vec![]);
+    }
+
+    #[test]
+    fn test_quicksort_single() {
+        let mut arr = vec![42];
+        quicksort(&mut arr);
+        assert_eq!(arr, vec![42]);
+    }
+
+    #[test]
+    fn test_quicksort_sorted() {
+        let mut arr = vec![1, 2, 3, 4, 5];
+        quicksort(&mut arr);
+        assert_eq!(arr, vec![1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn test_quicksort_reverse() {
+        let mut arr = vec![5, 4, 3, 2, 1];
+        quicksort(&mut arr);
+        assert_eq!(arr, vec![1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn test_quicksort_duplicates() {
+        let mut arr = vec![3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5];
+        quicksort(&mut arr);
+        assert_eq!(arr, vec![1, 1, 2, 3, 3, 4, 5, 5, 5, 6, 9]);
+    }
+
+    #[test]
+    fn test_quicksort_strings() {
+        let mut arr = vec!["dog", "cat", "ant", "bear"];
+        quicksort(&mut arr);
+        assert_eq!(arr, vec!["ant", "bear", "cat", "dog"]);
+    }
+}
+#+end_src
+
+** Graph Algorithms
+
+*** Graph Representation
+
+#+begin_src rust :tangle ./rust/src/algorithms/graphs/graph.rs
+//! Graph data structure and basic operations
+
+use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
+
+/// Weighted directed graph using adjacency list representation
+#[derive(Debug, Clone)]
+pub struct Graph<V> {
+    /// Adjacency list: vertex -> list of (neighbor, weight)
+    edges: HashMap<V, Vec<(V, u32)>>,
+}
+
+impl<V: Eq + Hash + Clone> Graph<V> {
+    pub fn new() -> Self {
+        Self {
+            edges: HashMap::new(),
+        }
+    }
+
+    /// Add a vertex to the graph
+    pub fn add_vertex(&mut self, vertex: V) {
+        self.edges.entry(vertex).or_insert_with(Vec::new);
+    }
+
+    /// Add a directed edge with weight
+    pub fn add_edge(&mut self, from: V, to: V, weight: u32) {
+        self.edges
+            .entry(from.clone())
+            .or_insert_with(Vec::new)
+            .push((to.clone(), weight));
+
+        // Ensure destination vertex exists
+        self.edges.entry(to).or_insert_with(Vec::new);
+    }
+
+    /// Add an undirected edge (bidirectional)
+    pub fn add_undirected_edge(&mut self, v1: V, v2: V, weight: u32) {
+        self.add_edge(v1.clone(), v2.clone(), weight);
+        self.add_edge(v2, v1, weight);
+    }
+
+    /// Get neighbors of a vertex
+    pub fn neighbors(&self, vertex: &V) -> Option<&Vec<(V, u32)>> {
+        self.edges.get(vertex)
+    }
+
+    /// Get all vertices
+    pub fn vertices(&self) -> HashSet<&V> {
+        self.edges.keys().collect()
+    }
+
+    /// Get number of vertices
+    pub fn vertex_count(&self) -> usize {
+        self.edges.len()
+    }
+
+    /// Get all edges
+    pub fn all_edges(&self) -> Vec<(V, V, u32)> {
+        let mut result = Vec::new();
+        for (from, neighbors) in &self.edges {
+            for (to, weight) in neighbors {
+                result.push((from.clone(), to.clone(), *weight));
+            }
+        }
+        result
+    }
+}
+
+impl<V: Eq + Hash + Clone> Default for Graph<V> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_graph_creation() {
+        let mut graph = Graph::new();
+        graph.add_vertex("A");
+        graph.add_vertex("B");
+        graph.add_edge("A", "B", 5);
+
+        assert_eq!(graph.vertex_count(), 2);
+        assert_eq!(graph.neighbors(&"A").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_undirected_edge() {
+        let mut graph = Graph::new();
+        graph.add_undirected_edge("A", "B", 10);
+
+        assert_eq!(graph.neighbors(&"A").unwrap()[0], ("B", 10));
+        assert_eq!(graph.neighbors(&"B").unwrap()[0], ("A", 10));
+    }
+}
+#+end_src
+
+*** Dijkstra's Shortest Path
+
+#+begin_src rust :tangle ./rust/src/algorithms/graphs/dijkstra.rs
+//! Dijkstra's shortest path algorithm
+
+use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::hash::Hash;
+
+use super::graph::Graph;
+
+/// State for priority queue (min-heap based on cost)
+#[derive(Clone, Eq, PartialEq)]
+struct State<V> {
+    cost: u32,
+    vertex: V,
+}
+
+impl<V: Eq> Ord for State<V> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // Min-heap: reverse ordering
+        other.cost.cmp(&self.cost)
+    }
+}
+
+impl<V: Eq> PartialOrd for State<V> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// Dijkstra's algorithm for finding shortest paths
+///
+/// Returns:
+/// - HashMap of distances from start to each reachable vertex
+/// - HashMap of predecessors for path reconstruction
+///
+/// Time complexity: O((V + E) log V) with binary heap
+/// Space complexity: O(V)
+pub fn dijkstra<V>(
+    graph: &Graph<V>,
+    start: &V,
+) -> (HashMap<V, u32>, HashMap<V, V>)
+where
+    V: Eq + Hash + Clone,
+{
+    let mut distances: HashMap<V, u32> = HashMap::new();
+    let mut predecessors: HashMap<V, V> = HashMap::new();
+    let mut heap = BinaryHeap::new();
+    let mut visited = HashSet::new();
+
+    // Initialize
+    distances.insert(start.clone(), 0);
+    heap.push(State {
+        cost: 0,
+        vertex: start.clone(),
+    });
+
+    while let Some(State { cost, vertex }) = heap.pop() {
+        // Skip if already visited
+        if !visited.insert(vertex.clone()) {
+            continue;
+        }
+
+        // Current cost exceeds recorded distance
+        if cost > *distances.get(&vertex).unwrap_or(&u32::MAX) {
+            continue;
+        }
+
+        // Explore neighbors
+        if let Some(neighbors) = graph.neighbors(&vertex) {
+            for (neighbor, edge_weight) in neighbors {
+                let new_cost = cost + edge_weight;
+                let current_distance = distances.get(neighbor).copied().unwrap_or(u32::MAX);
+
+                if new_cost < current_distance {
+                    distances.insert(neighbor.clone(), new_cost);
+                    predecessors.insert(neighbor.clone(), vertex.clone());
+                    heap.push(State {
+                        cost: new_cost,
+                        vertex: neighbor.clone(),
+                    });
+                }
+            }
+        }
+    }
+
+    (distances, predecessors)
+}
+
+/// Reconstruct path from start to end using predecessors
+pub fn reconstruct_path<V>(
+    predecessors: &HashMap<V, V>,
+    start: &V,
+    end: &V,
+) -> Option<Vec<V>>
+where
+    V: Eq + Hash + Clone,
+{
+    let mut path = Vec::new();
+    let mut current = end.clone();
+
+    // Trace back from end to start
+    while &current != start {
+        path.push(current.clone());
+        current = predecessors.get(&current)?.clone();
+    }
+
+    path.push(start.clone());
+    path.reverse();
+
+    Some(path)
+}
+
+pub fn demonstrate_dijkstra() {
+    let mut graph = Graph::new();
+
+    // Build sample graph
+    graph.add_undirected_edge("A", "B", 4);
+    graph.add_undirected_edge("A", "C", 2);
+    graph.add_undirected_edge("B", "C", 1);
+    graph.add_undirected_edge("B", "D", 5);
+    graph.add_undirected_edge("C", "D", 8);
+    graph.add_undirected_edge("C", "E", 10);
+    graph.add_undirected_edge("D", "E", 2);
+
+    let (distances, predecessors) = dijkstra(&graph, &"A");
+
+    println!("Shortest distances from A:");
+    for vertex in ["A", "B", "C", "D", "E"] {
+        if let Some(&dist) = distances.get(&vertex) {
+            println!("  {} => distance: {}", vertex, dist);
+
+            if let Some(path) = reconstruct_path(&predecessors, &"A", &vertex) {
+                println!("    Path: {:?}", path);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_dijkstra_simple() {
+        let mut graph = Graph::new();
+        graph.add_edge("A", "B", 1);
+        graph.add_edge("B", "C", 2);
+        graph.add_edge("A", "C", 4);
+
+        let (distances, _) = dijkstra(&graph, &"A");
+
+        assert_eq!(distances.get(&"A"), Some(&0));
+        assert_eq!(distances.get(&"B"), Some(&1));
+        assert_eq!(distances.get(&"C"), Some(&3)); // Via B, not direct
+    }
+
+    #[test]
+    fn test_path_reconstruction() {
+        let mut graph = Graph::new();
+        graph.add_edge("A", "B", 1);
+        graph.add_edge("B", "C", 1);
+
+        let (_, predecessors) = dijkstra(&graph, &"A");
+        let path = reconstruct_path(&predecessors, &"A", &"C");
+
+        assert_eq!(path, Some(vec!["A", "B", "C"]));
+    }
+}
+#+end_src
+
+*** Kruskal's Minimum Spanning Tree
+
+#+begin_src rust :tangle ./rust/src/algorithms/graphs/kruskal.rs
+//! Kruskal's minimum spanning tree algorithm
+
+use std::collections::HashMap;
+use std::hash::Hash;
+
+use super::graph::Graph;
+
+/// Union-Find (Disjoint Set Union) data structure
+struct UnionFind<V> {
+    parent: HashMap<V, V>,
+    rank: HashMap<V, usize>,
+}
+
+impl<V: Eq + Hash + Clone> UnionFind<V> {
+    fn new() -> Self {
+        Self {
+            parent: HashMap::new(),
+            rank: HashMap::new(),
+        }
+    }
+
+    fn make_set(&mut self, vertex: V) {
+        self.parent.insert(vertex.clone(), vertex.clone());
+        self.rank.insert(vertex, 0);
+    }
+
+    /// Find with path compression
+    fn find(&mut self, vertex: &V) -> Option<V> {
+        if !self.parent.contains_key(vertex) {
+            return None;
+        }
+
+        let mut current = vertex.clone();
+        let mut path = Vec::new();
+
+        // Find root
+        while &current != self.parent.get(&current)? {
+            path.push(current.clone());
+            current = self.parent.get(&current)?.clone();
+        }
+
+        // Path compression
+        for node in path {
+            self.parent.insert(node, current.clone());
+        }
+
+        Some(current)
+    }
+
+    /// Union by rank
+    fn union(&mut self, v1: &V, v2: &V) -> bool {
+        let root1 = match self.find(v1) {
+            Some(r) => r,
+            None => return false,
+        };
+
+        let root2 = match self.find(v2) {
+            Some(r) => r,
+            None => return false,
+        };
+
+        if root1 == root2 {
+            return false; // Already in same set
+        }
+
+        let rank1 = *self.rank.get(&root1).unwrap_or(&0);
+        let rank2 = *self.rank.get(&root2).unwrap_or(&0);
+
+        // Union by rank
+        match rank1.cmp(&rank2) {
+            std::cmp::Ordering::Less => {
+                self.parent.insert(root1, root2);
+            }
+            std::cmp::Ordering::Greater => {
+                self.parent.insert(root2, root1);
+            }
+            std::cmp::Ordering::Equal => {
+                self.parent.insert(root2, root1.clone());
+                *self.rank.entry(root1).or_insert(0) += 1;
+            }
+        }
+
+        true
+    }
+}
+
+/// Kruskal's algorithm for finding minimum spanning tree
+///
+/// Returns: List of edges in MST and total weight
+///
+/// Time complexity: O(E log E) due to sorting
+/// Space complexity: O(V + E)
+pub fn kruskal<V>(graph: &Graph<V>) -> (Vec<(V, V, u32)>, u32)
+where
+    V: Eq + Hash + Clone,
+{
+    let mut uf = UnionFind::new();
+    let mut mst = Vec::new();
+    let mut total_weight = 0;
+
+    // Initialize union-find with all vertices
+    for vertex in graph.vertices() {
+        uf.make_set(vertex.clone());
+    }
+
+    // Get all edges and sort by weight
+    let mut edges = graph.all_edges();
+    edges.sort_by_key(|(_, _, weight)| *weight);
+
+    // Process edges in order of increasing weight
+    for (u, v, weight) in edges {
+        // If u and v are in different components, add edge to MST
+        if uf.union(&u, &v) {
+            mst.push((u, v, weight));
+            total_weight += weight;
+        }
+    }
+
+    (mst, total_weight)
+}
+
+pub fn demonstrate_kruskal() {
+    let mut graph = Graph::new();
+
+    // Build sample graph (undirected)
+    graph.add_undirected_edge("A", "B", 4);
+    graph.add_undirected_edge("A", "C", 2);
+    graph.add_undirected_edge("B", "C", 1);
+    graph.add_undirected_edge("B", "D", 5);
+    graph.add_undirected_edge("C", "D", 8);
+    graph.add_undirected_edge("C", "E", 10);
+    graph.add_undirected_edge("D", "E", 2);
+    graph.add_undirected_edge("D", "F", 6);
+    graph.add_undirected_edge("E", "F", 3);
+
+    let (mst, total_weight) = kruskal(&graph);
+
+    println!("Minimum Spanning Tree:");
+    for (u, v, weight) in mst {
+        println!("  {} -- {} (weight: {})", u, v, weight);
+    }
+    println!("Total weight: {}", total_weight);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_union_find() {
+        let mut uf = UnionFind::new();
+        uf.make_set(1);
+        uf.make_set(2);
+        uf.make_set(3);
+
+        assert_ne!(uf.find(&1), uf.find(&2));
+        assert!(uf.union(&1, &2));
+        assert_eq!(uf.find(&1), uf.find(&2));
+        assert!(!uf.union(&1, &2)); // Already connected
+    }
+
+    #[test]
+    fn test_kruskal_simple() {
+        let mut graph = Graph::new();
+        graph.add_undirected_edge("A", "B", 1);
+        graph.add_undirected_edge("B", "C", 2);
+        graph.add_undirected_edge("A", "C", 3);
+
+        let (mst, total_weight) = kruskal(&graph);
+
+        // MST should have 2 edges (n-1 for n vertices)
+        assert_eq!(mst.len(), 2);
+        // Should choose edges with weights 1 and 2
+        assert_eq!(total_weight, 3);
+    }
+}
+#+end_src
+
+*** Graph Module Declaration
+
+#+begin_src rust :tangle ./rust/src/algorithms/graphs/mod.rs
+//! Graph algorithms
+
+pub mod graph;
+pub mod dijkstra;
+pub mod kruskal;
+
+pub use graph::Graph;
+pub use dijkstra::{dijkstra, demonstrate_dijkstra, reconstruct_path};
+pub use kruskal::{demonstrate_kruskal, kruskal};
+#+end_src
+
+
+** Dynamic Programming
+
+*** 0/1 Knapsack Problem
+
+#+begin_src rust :tangle ./rust/src/algorithms/dp/knapsack.rs
+//! 0/1 Knapsack problem with dynamic programming
+
+/// Item with weight and value
+#[derive(Debug, Clone, Copy)]
+pub struct Item {
+    pub weight: usize,
+    pub value: usize,
+}
+
+/// Solve 0/1 knapsack problem using dynamic programming
+///
+/// Given items with weights and values, and a maximum capacity,
+/// find the maximum value that can be obtained by selecting items.
+///
+/// Time complexity: O(n * capacity)
+/// Space complexity: O(n * capacity)
+pub fn knapsack(items: &[Item], capacity: usize) -> (usize, Vec<usize>) {
+    let n = items.len();
+
+    // dp[i][w] = max value using first i items with capacity w
+    let mut dp = vec![vec![0; capacity + 1]; n + 1];
+
+    // Fill DP table
+    for i in 1..=n {
+        for w in 0..=capacity {
+            let item = &items[i - 1];
+
+            if item.weight <= w {
+                // Can include this item
+                let include = dp[i - 1][w - item.weight] + item.value;
+                let exclude = dp[i - 1][w];
+                dp[i][w] = include.max(exclude);
+            } else {
+                // Cannot include this item
+                dp[i][w] = dp[i - 1][w];
+            }
+        }
+    }
+
+    // Reconstruct solution
+    let mut selected = Vec::new();
+    let mut w = capacity;
+    for i in (1..=n).rev() {
+        if dp[i][w] != dp[i - 1][w] {
+            selected.push(i - 1); // Item index
+            w -= items[i - 1].weight;
+        }
+    }
+    selected.reverse();
+
+    (dp[n][capacity], selected)
+}
+
+/// Space-optimized version using O(capacity) space
+pub fn knapsack_optimized(items: &[Item], capacity: usize) -> usize {
+    let mut dp = vec![0; capacity + 1];
+
+    for item in items {
+        // Process in reverse to avoid using updated values
+        for w in (item.weight..=capacity).rev() {
+            dp[w] = dp[w].max(dp[w - item.weight] + item.value);
+        }
+    }
+
+    dp[capacity]
+}
+
+pub fn demonstrate_knapsack() {
+    let items = vec![
+        Item { weight: 2, value: 12 },
+        Item { weight: 1, value: 10 },
+        Item { weight: 3, value: 20 },
+        Item { weight: 2, value: 15 },
+    ];
+    let capacity = 5;
+
+    let (max_value, selected) = knapsack(&items, capacity);
+
+    println!("Knapsack Problem (capacity: {})", capacity);
+    println!("Items: {:?}", items);
+    println!("Maximum value: {}", max_value);
+    println!("Selected items: {:?}", selected);
+
+    for &idx in &selected {
+        println!(
+            "  Item {}: weight={}, value={}",
+            idx, items[idx].weight, items[idx].value
+        );
+    }
+
+    let max_value_opt = knapsack_optimized(&items, capacity);
+    println!("Optimized version result: {}", max_value_opt);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_knapsack_simple() {
+        let items = vec![
+            Item { weight: 1, value: 1 },
+            Item { weight: 3, value: 4 },
+            Item { weight: 4, value: 5 },
+            Item { weight: 5, value: 7 },
+        ];
+        let (max_value, _) = knapsack(&items, 7);
+        assert_eq!(max_value, 9); // Items 1 and 2
+    }
+
+    #[test]
+    fn test_knapsack_optimized() {
+        let items = vec![
+            Item { weight: 2, value: 12 },
+            Item { weight: 1, value: 10 },
+            Item { weight: 3, value: 20 },
+        ];
+        let max_value = knapsack_optimized(&items, 5);
+        assert_eq!(max_value, 32); // All items
+    }
+}
+#+end_src
+
+*** Longest Common Subsequence
+
+#+begin_src rust :tangle ./rust/src/algorithms/dp/lcs.rs
+//! Longest Common Subsequence with memoization
+
+use std::cmp::max;
+
+/// Find longest common subsequence using dynamic programming
+///
+/// Time complexity: O(m * n)
+/// Space complexity: O(m * n)
+pub fn lcs(s1: &str, s2: &str) -> String {
+    let chars1: Vec<char> = s1.chars().collect();
+    let chars2: Vec<char> = s2.chars().collect();
+    let m = chars1.len();
+    let n = chars2.len();
+
+    // dp[i][j] = length of LCS of s1[0..i] and s2[0..j]
+    let mut dp = vec![vec![0; n + 1]; m + 1];
+
+    // Fill DP table
+    for i in 1..=m {
+        for j in 1..=n {
+            if chars1[i - 1] == chars2[j - 1] {
+                dp[i][j] = dp[i - 1][j - 1] + 1;
+            } else {
+                dp[i][j] = max(dp[i - 1][j], dp[i][j - 1]);
+            }
+        }
+    }
+
+    // Reconstruct LCS
+    let mut result = String::new();
+    let mut i = m;
+    let mut j = n;
+
+    while i > 0 && j > 0 {
+        if chars1[i - 1] == chars2[j - 1] {
+            result.push(chars1[i - 1]);
+            i -= 1;
+            j -= 1;
+        } else if dp[i - 1][j] > dp[i][j - 1] {
+            i -= 1;
+        } else {
+            j -= 1;
+        }
+    }
+
+    result.chars().rev().collect()
+}
+
+/// Get LCS length only (space-optimized)
+pub fn lcs_length(s1: &str, s2: &str) -> usize {
+    let chars1: Vec<char> = s1.chars().collect();
+    let chars2: Vec<char> = s2.chars().collect();
+    let m = chars1.len();
+    let n = chars2.len();
+
+    // Only need previous and current row
+    let mut prev = vec![0; n + 1];
+    let mut curr = vec![0; n + 1];
+
+    for i in 1..=m {
+        for j in 1..=n {
+            if chars1[i - 1] == chars2[j - 1] {
+                curr[j] = prev[j - 1] + 1;
+            } else {
+                curr[j] = max(prev[j], curr[j - 1]);
+            }
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+
+    prev[n]
+}
+
+/// Memoized recursive version
+pub fn lcs_memoized(s1: &str, s2: &str) -> String {
+    let chars1: Vec<char> = s1.chars().collect();
+    let chars2: Vec<char> = s2.chars().collect();
+    let m = chars1.len();
+    let n = chars2.len();
+
+    let mut memo = vec![vec![None; n]; m];
+
+    fn helper(
+        chars1: &[char],
+        chars2: &[char],
+        i: usize,
+        j: usize,
+        memo: &mut Vec<Vec<Option<String>>>,
+    ) -> String {
+        if i == 0 || j == 0 {
+            return String::new();
+        }
+
+        if let Some(ref cached) = memo[i - 1][j - 1] {
+            return cached.clone();
+        }
+
+        let result = if chars1[i - 1] == chars2[j - 1] {
+            let mut sub = helper(chars1, chars2, i - 1, j - 1, memo);
+            sub.push(chars1[i - 1]);
+            sub
+        } else {
+            let left = helper(chars1, chars2, i - 1, j, memo);
+            let right = helper(chars1, chars2, i, j - 1, memo);
+            if left.len() > right.len() {
+                left
+            } else {
+                right
+            }
+        };
+
+        memo[i - 1][j - 1] = Some(result.clone());
+        result
+    }
+
+    helper(&chars1, &chars2, m, n, &mut memo)
+}
+
+pub fn demonstrate_lcs() {
+    let s1 = "ABCDGH";
+    let s2 = "AEDFHR";
+
+    let subsequence = lcs(s1, s2);
+    let length = lcs_length(s1, s2);
+
+    println!("Longest Common Subsequence");
+    println!("String 1: {}", s1);
+    println!("String 2: {}", s2);
+    println!("LCS: {}", subsequence);
+    println!("Length: {}", length);
+
+    // Test memoized version
+    let subsequence_memo = lcs_memoized(s1, s2);
+    println!("LCS (memoized): {}", subsequence_memo);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_lcs_basic() {
+        assert_eq!(lcs("ABCDGH", "AEDFHR"), "ADH");
+        assert_eq!(lcs("AGGTAB", "GXTXAYB"), "GTAB");
+    }
+
+    #[test]
+    fn test_lcs_length() {
+        assert_eq!(lcs_length("ABCDGH", "AEDFHR"), 3);
+        assert_eq!(lcs_length("AGGTAB", "GXTXAYB"), 4);
+    }
+
+    #[test]
+    fn test_lcs_empty() {
+        assert_eq!(lcs("", "ABC"), "");
+        assert_eq!(lcs("ABC", ""), "");
+    }
+
+    #[test]
+    fn test_lcs_identical() {
+        assert_eq!(lcs("ABCD", "ABCD"), "ABCD");
+    }
+
+    #[test]
+    fn test_lcs_memoized() {
+        assert_eq!(lcs_memoized("ABCDGH", "AEDFHR"), "ADH");
+    }
+}
+#+end_src
+
+*** DP Module Declaration
+
+#+begin_src rust :tangle ./rust/src/algorithms/dp/mod.rs
+//! Dynamic programming algorithms
+
+pub mod knapsack;
+pub mod lcs;
+
+pub use knapsack::{demonstrate_knapsack, knapsack, knapsack_optimized, Item};
+pub use lcs::{demonstrate_lcs, lcs, lcs_length, lcs_memoized};
+#+end_src
+
+** Algorithms Module Declaration
+
+#+begin_src rust :tangle ./rust/src/algorithms/mod.rs
+//! Algorithm implementations
+
+pub mod sorting;
+pub mod graphs;
+pub mod dp;
+
+pub use sorting::*;
+pub use graphs::*;
+pub use dp::*;
+#+end_src
+
+
+* Standard Library Usage
+
+This section demonstrates practical use of Rust's standard library and common
+third-party crates for real-world applications.
+
+** File I/O
+
+#+begin_src rust :tangle ./rust/src/examples/file_io.rs
+//! File I/O operations with error handling
+
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, BufRead, BufReader, BufWriter, Write};
+use std::path::Path;
+
+use anyhow::{Context, Result};
+
+/// Read entire file to string
+pub fn read_file_to_string(path: &Path) -> Result<String> {
+    fs::read_to_string(path)
+        .with_context(|| format!("Failed to read file: {}", path.display()))
+}
+
+/// Read file line by line (memory efficient for large files)
+pub fn read_lines(path: &Path) -> Result<Vec<String>> {
+    let file = File::open(path)
+        .with_context(|| format!("Failed to open file: {}", path.display()))?;
+
+    let reader = BufReader::new(file);
+    let mut lines = Vec::new();
+
+    for line in reader.lines() {
+        let line = line.context("Failed to read line")?;
+        lines.push(line);
+    }
+
+    Ok(lines)
+}
+
+/// Write string to file
+pub fn write_file(path: &Path, content: &str) -> Result<()> {
+    fs::write(path, content)
+        .with_context(|| format!("Failed to write file: {}", path.display()))
+}
+
+/// Append to file with buffered writer (efficient for many writes)
+pub fn append_lines(path: &Path, lines: &[String]) -> Result<()> {
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .with_context(|| format!("Failed to open file for append: {}", path.display()))?;
+
+    let mut writer = BufWriter::new(file);
+
+    for line in lines {
+        writeln!(writer, "{}", line)
+            .context("Failed to write line")?;
+    }
+
+    writer.flush().context("Failed to flush writer")?;
+    Ok(())
+}
+
+/// Copy file with progress
+pub fn copy_file(src: &Path, dst: &Path) -> Result<u64> {
+    fs::copy(src, dst)
+        .with_context(|| format!("Failed to copy {} to {}", src.display(), dst.display()))
+}
+
+/// Directory operations
+pub fn directory_operations(dir: &Path) -> Result<()> {
+    // Create directory (including parents)
+    fs::create_dir_all(dir)
+        .with_context(|| format!("Failed to create directory: {}", dir.display()))?;
+
+    // List directory contents
+    for entry in fs::read_dir(dir)
+        .with_context(|| format!("Failed to read directory: {}", dir.display()))?
+    {
+        let entry = entry.context("Failed to read directory entry")?;
+        let path = entry.path();
+
+        let metadata = entry.metadata().context("Failed to get metadata")?;
+
+        if metadata.is_file() {
+            println!("File: {} ({} bytes)", path.display(), metadata.len());
+        } else if metadata.is_dir() {
+            println!("Dir:  {}/", path.display());
+        }
+    }
+
+    Ok(())
+}
+
+/// Temporary file operations
+pub fn temp_file_example() -> Result<()> {
+    use std::env;
+
+    let temp_dir = env::temp_dir();
+    let temp_file = temp_dir.join("rust_example.txt");
+
+    write_file(&temp_file, "Temporary data")?;
+    println!("Created temp file: {}", temp_file.display());
+
+    let content = read_file_to_string(&temp_file)?;
+    println!("Content: {}", content);
+
+    fs::remove_file(&temp_file)
+        .with_context(|| format!("Failed to remove temp file: {}", temp_file.display()))?;
+
+    Ok(())
+}
+
+pub fn demonstrate() -> Result<()> {
+    println!("File I/O Examples");
+
+    // Create test directory
+    let test_dir = Path::new("/tmp/rust_io_test");
+    fs::create_dir_all(test_dir)?;
+
+    // Write test file
+    let test_file = test_dir.join("test.txt");
+    write_file(&test_file, "Hello, Rust!\nFile I/O example.")?;
+    println!("Wrote to: {}", test_file.display());
+
+    // Read back
+    let content = read_file_to_string(&test_file)?;
+    println!("Content:\n{}", content);
+
+    // Append lines
+    append_lines(&test_file, &["Appended line 1".to_string(), "Appended line 2".to_string()])?;
+
+    // Read lines
+    let lines = read_lines(&test_file)?;
+    println!("\nAll lines ({}):", lines.len());
+    for (i, line) in lines.iter().enumerate() {
+        println!("  {}: {}", i + 1, line);
+    }
+
+    // List directory
+    println!("\nDirectory contents:");
+    directory_operations(test_dir)?;
+
+    // Cleanup
+    fs::remove_dir_all(test_dir)?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env;
+
+    #[test]
+    fn test_write_read() -> Result<()> {
+        let temp_dir = env::temp_dir();
+        let test_file = temp_dir.join("rust_test_write_read.txt");
+
+        write_file(&test_file, "test content")?;
+        let content = read_file_to_string(&test_file)?;
+
+        assert_eq!(content, "test content");
+
+        fs::remove_file(&test_file)?;
+        Ok(())
+    }
+}
+#+end_src
+
+** Networking
+
+#+begin_src rust :tangle ./rust/src/examples/networking.rs
+//! Networking examples with TCP and HTTP
+
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::time::Duration;
+
+use anyhow::{Context, Result};
+
+/// Simple TCP echo server
+pub fn tcp_echo_server(addr: &str) -> Result<()> {
+    let listener = TcpListener::bind(addr)
+        .with_context(|| format!("Failed to bind to {}", addr))?;
+
+    println!("TCP echo server listening on {}", addr);
+
+    for stream in listener.incoming() {
+        match stream {
+            Ok(stream) => {
+                std::thread::spawn(|| {
+                    if let Err(e) = handle_client(stream) {
+                        eprintln!("Error handling client: {}", e);
+                    }
+                });
+            }
+            Err(e) => {
+                eprintln!("Connection failed: {}", e);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn handle_client(mut stream: TcpStream) -> Result<()> {
+    let peer_addr = stream.peer_addr()?;
+    println!("Client connected: {}", peer_addr);
+
+    let mut buffer = [0; 1024];
+
+    loop {
+        let bytes_read = stream.read(&mut buffer)
+            .context("Failed to read from stream")?;
+
+        if bytes_read == 0 {
+            break; // Client disconnected
+        }
+
+        // Echo back
+        stream.write_all(&buffer[..bytes_read])
+            .context("Failed to write to stream")?;
+    }
+
+    println!("Client disconnected: {}", peer_addr);
+    Ok(())
+}
+
+/// TCP client
+pub fn tcp_client(addr: &str, message: &str) -> Result<String> {
+    let mut stream = TcpStream::connect(addr)
+        .with_context(|| format!("Failed to connect to {}", addr))?;
+
+    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+    stream.set_write_timeout(Some(Duration::from_secs(5)))?;
+
+    // Send message
+    stream.write_all(message.as_bytes())
+        .context("Failed to send data")?;
+
+    // Read response
+    let mut buffer = [0; 1024];
+    let bytes_read = stream.read(&mut buffer)
+        .context("Failed to read response")?;
+
+    Ok(String::from_utf8_lossy(&buffer[..bytes_read]).to_string())
+}
+
+/// HTTP GET request using reqwest
+pub async fn http_get(url: &str) -> Result<String> {
+    let response = reqwest::get(url)
+        .await
+        .with_context(|| format!("Failed to GET {}", url))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        anyhow::bail!("HTTP error: {}", status);
+    }
+
+    let body = response.text()
+        .await
+        .context("Failed to read response body")?;
+
+    Ok(body)
+}
+
+/// HTTP POST request with JSON
+pub async fn http_post_json(url: &str, json_body: serde_json::Value) -> Result<String> {
+    let client = reqwest::Client::new();
+
+    let response = client
+        .post(url)
+        .json(&json_body)
+        .send()
+        .await
+        .with_context(|| format!("Failed to POST to {}", url))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        anyhow::bail!("HTTP error: {}", status);
+    }
+
+    let body = response.text()
+        .await
+        .context("Failed to read response body")?;
+
+    Ok(body)
+}
+
+pub async fn demonstrate_http() -> Result<()> {
+    println!("HTTP Examples");
+
+    // GET request
+    let url = "https://httpbin.org/get";
+    println!("\nGET {}", url);
+
+    match http_get(url).await {
+        Ok(body) => println!("Response:\n{}", &body[..200.min(body.len())]),
+        Err(e) => eprintln!("Error: {}", e),
+    }
+
+    // POST request
+    let url = "https://httpbin.org/post";
+    let json = serde_json::json!({
+        "message": "Hello from Rust",
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+    });
+
+    println!("\nPOST {} with JSON", url);
+    match http_post_json(url, json).await {
+        Ok(body) => println!("Response:\n{}", &body[..200.min(body.len())]),
+        Err(e) => eprintln!("Error: {}", e),
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_http_get() {
+        let result = http_get("https://httpbin.org/get").await;
+        assert!(result.is_ok());
+    }
+}
+#+end_src
+
+** Database: SQLite
+
+#+begin_src rust :tangle ./rust/src/examples/database.rs
+//! SQLite database operations
+
+use anyhow::{Context, Result};
+use rusqlite::{params, Connection};
+
+#[derive(Debug)]
+pub struct User {
+    pub id: i32,
+    pub name: String,
+    pub email: String,
+}
+
+/// Create database and tables
+pub fn create_database(path: &str) -> Result<Connection> {
+    let conn = Connection::open(path)
+        .with_context(|| format!("Failed to open database: {}", path))?;
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            email TEXT NOT NULL UNIQUE
+        )",
+        [],
+    )
+    .context("Failed to create users table")?;
+
+    Ok(conn)
+}
+
+/// Insert user with prepared statement
+pub fn insert_user(conn: &Connection, name: &str, email: &str) -> Result<i64> {
+    conn.execute(
+        "INSERT INTO users (name, email) VALUES (?1, ?2)",
+        params![name, email],
+    )
+    .context("Failed to insert user")?;
+
+    Ok(conn.last_insert_rowid())
+}
+
+/// Query users
+pub fn get_all_users(conn: &Connection) -> Result<Vec<User>> {
+    let mut stmt = conn
+        .prepare("SELECT id, name, email FROM users ORDER BY id")
+        .context("Failed to prepare statement")?;
+
+    let users = stmt
+        .query_map([], |row| {
+            Ok(User {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                email: row.get(2)?,
+            })
+        })
+        .context("Failed to query users")?
+        .collect::<Result<Vec<_>, _>>()
+        .context("Failed to collect users")?;
+
+    Ok(users)
+}
+
+/// Get user by ID
+pub fn get_user_by_id(conn: &Connection, id: i32) -> Result<Option<User>> {
+    let mut stmt = conn
+        .prepare("SELECT id, name, email FROM users WHERE id = ?1")
+        .context("Failed to prepare statement")?;
+
+    let mut rows = stmt
+        .query(params![id])
+        .context("Failed to query user")?;
+
+    if let Some(row) = rows.next().context("Failed to get row")? {
+        Ok(Some(User {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            email: row.get(2)?,
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Update user
+pub fn update_user(conn: &Connection, id: i32, name: &str, email: &str) -> Result<()> {
+    let updated = conn.execute(
+        "UPDATE users SET name = ?1, email = ?2 WHERE id = ?3",
+        params![name, email, id],
+    )
+    .context("Failed to update user")?;
+
+    if updated == 0 {
+        anyhow::bail!("User not found: id={}", id);
+    }
+
+    Ok(())
+}
+
+/// Delete user
+pub fn delete_user(conn: &Connection, id: i32) -> Result<()> {
+    let deleted = conn.execute(
+        "DELETE FROM users WHERE id = ?1",
+        params![id],
+    )
+    .context("Failed to delete user")?;
+
+    if deleted == 0 {
+        anyhow::bail!("User not found: id={}", id);
+    }
+
+    Ok(())
+}
+
+/// Transaction example
+pub fn transaction_example(conn: &Connection) -> Result<()> {
+    let tx = conn.unchecked_transaction()
+        .context("Failed to begin transaction")?;
+
+    // Multiple operations in transaction
+    tx.execute(
+        "INSERT INTO users (name, email) VALUES (?1, ?2)",
+        params!["Alice", "alice@example.com"],
+    )?;
+
+    tx.execute(
+        "INSERT INTO users (name, email) VALUES (?1, ?2)",
+        params!["Bob", "bob@example.com"],
+    )?;
+
+    // Commit transaction
+    tx.commit().context("Failed to commit transaction")?;
+
+    Ok(())
+}
+
+pub fn demonstrate() -> Result<()> {
+    println!("SQLite Database Examples");
+
+    let conn = create_database(":memory:")?;
+
+    // Insert users
+    let id1 = insert_user(&conn, "Alice", "alice@example.com")?;
+    let id2 = insert_user(&conn, "Bob", "bob@example.com")?;
+    println!("Inserted users: id={}, id={}", id1, id2);
+
+    // Query all users
+    let users = get_all_users(&conn)?;
+    println!("\nAll users:");
+    for user in &users {
+        println!("  {:?}", user);
+    }
+
+    // Get user by ID
+    if let Some(user) = get_user_by_id(&conn, id1 as i32)? {
+        println!("\nUser by ID {}:", id1);
+        println!("  {:?}", user);
+    }
+
+    // Update user
+    update_user(&conn, id1 as i32, "Alice Smith", "alice.smith@example.com")?;
+    println!("\nUpdated user {}", id1);
+
+    // Verify update
+    if let Some(user) = get_user_by_id(&conn, id1 as i32)? {
+        println!("  {:?}", user);
+    }
+
+    // Transaction
+    transaction_example(&conn)?;
+    println!("\nTransaction committed");
+
+    let users = get_all_users(&conn)?;
+    println!("Total users: {}", users.len());
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_crud_operations() -> Result<()> {
+        let conn = create_database(":memory:")?;
+
+        // Create
+        let id = insert_user(&conn, "Test User", "test@example.com")?;
+
+        // Read
+        let user = get_user_by_id(&conn, id as i32)?.unwrap();
+        assert_eq!(user.name, "Test User");
+
+        // Update
+        update_user(&conn, id as i32, "Updated User", "updated@example.com")?;
+        let user = get_user_by_id(&conn, id as i32)?.unwrap();
+        assert_eq!(user.name, "Updated User");
+
+        // Delete
+        delete_user(&conn, id as i32)?;
+        assert!(get_user_by_id(&conn, id as i32)?.is_none());
+
+        Ok(())
+    }
+}
+#+end_src
+
+
+** HTML Parsing
+
+#+begin_src rust :tangle ./rust/src/examples/parsing.rs
+//! HTML/JSON parsing examples
+
+use anyhow::{Context, Result};
+use scraper::{Html, Selector};
+use serde::{Deserialize, Serialize};
+
+/// Parse HTML and extract data
+pub fn parse_html(html: &str) -> Result<Vec<String>> {
+    let document = Html::parse_document(html);
+
+    let selector = Selector::parse("a")
+        .map_err(|e| anyhow::anyhow!("Invalid selector: {:?}", e))?;
+
+    let mut links = Vec::new();
+
+    for element in document.select(&selector) {
+        if let Some(href) = element.value().attr("href") {
+            links.push(href.to_string());
+        }
+    }
+
+    Ok(links)
+}
+
+/// Extract specific elements with CSS selectors
+pub fn parse_structured_html(html: &str) -> Result<Vec<Article>> {
+    let document = Html::parse_document(html);
+
+    let article_selector = Selector::parse("article")
+        .map_err(|e| anyhow::anyhow!("Invalid selector: {:?}", e))?;
+    let title_selector = Selector::parse("h2")
+        .map_err(|e| anyhow::anyhow!("Invalid selector: {:?}", e))?;
+    let content_selector = Selector::parse("p")
+        .map_err(|e| anyhow::anyhow!("Invalid selector: {:?}", e))?;
+
+    let mut articles = Vec::new();
+
+    for element in document.select(&article_selector) {
+        let title = element
+            .select(&title_selector)
+            .next()
+            .map(|e| e.text().collect::<String>())
+            .unwrap_or_default();
+
+        let content = element
+            .select(&content_selector)
+            .map(|e| e.text().collect::<String>())
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        articles.push(Article { title, content });
+    }
+
+    Ok(articles)
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Article {
+    pub title: String,
+    pub content: String,
+}
+
+/// JSON parsing and serialization
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct Config {
+    pub name: String,
+    pub version: String,
+    pub settings: Settings,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+pub struct Settings {
+    pub debug: bool,
+    pub timeout: u64,
+    pub features: Vec<String>,
+}
+
+pub fn json_example() -> Result<()> {
+    let config = Config {
+        name: "MyApp".to_string(),
+        version: "1.0.0".to_string(),
+        settings: Settings {
+            debug: true,
+            timeout: 30,
+            features: vec!["feature1".to_string(), "feature2".to_string()],
+        },
+    };
+
+    // Serialize to JSON
+    let json = serde_json::to_string_pretty(&config)
+        .context("Failed to serialize to JSON")?;
+
+    println!("Serialized JSON:\n{}", json);
+
+    // Deserialize from JSON
+    let parsed: Config = serde_json::from_str(&json)
+        .context("Failed to deserialize from JSON")?;
+
+    println!("\nDeserialized config: {:?}", parsed);
+
+    assert_eq!(config, parsed);
+
+    Ok(())
+}
+
+/// Regex parsing
+pub fn regex_example() -> Result<()> {
+    use regex::Regex;
+
+    let text = "Contact us at support@example.com or sales@example.com";
+
+    let email_regex = Regex::new(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
+        .context("Failed to compile regex")?;
+
+    println!("Emails found:");
+    for capture in email_regex.captures_iter(text) {
+        println!("  {}", &capture[0]);
+    }
+
+    Ok(())
+}
+
+pub fn demonstrate() -> Result<()> {
+    println!("Parsing Examples\n");
+
+    // HTML parsing
+    let html = r#"
+        <html>
+            <body>
+                <article>
+                    <h2>First Article</h2>
+                    <p>Content of first article.</p>
+                </article>
+                <article>
+                    <h2>Second Article</h2>
+                    <p>Content of second article.</p>
+                </article>
+            </body>
+        </html>
+    "#;
+
+    println!("Parsed articles:");
+    let articles = parse_structured_html(html)?;
+    for article in articles {
+        println!("  Title: {}", article.title);
+        println!("  Content: {}\n", article.content);
+    }
+
+    // JSON example
+    json_example()?;
+
+    println!();
+
+    // Regex example
+    regex_example()?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_html_parsing() -> Result<()> {
+        let html = r#"<a href="https://example.com">Link</a>"#;
+        let links = parse_html(html)?;
+        assert_eq!(links, vec!["https://example.com"]);
+        Ok(())
+    }
+
+    #[test]
+    fn test_json_roundtrip() -> Result<()> {
+        let config = Config {
+            name: "Test".to_string(),
+            version: "1.0".to_string(),
+            settings: Settings {
+                debug: false,
+                timeout: 60,
+                features: vec![],
+            },
+        };
+
+        let json = serde_json::to_string(&config)?;
+        let parsed: Config = serde_json::from_str(&json)?;
+
+        assert_eq!(config, parsed);
+        Ok(())
+    }
+}
+#+end_src
+
+** Cryptography
+
+#+begin_src rust :tangle ./rust/src/examples/crypto.rs
+//! Cryptography examples: hashing and encryption
+
+use anyhow::{Context, Result};
+use sha2::{Digest, Sha256, Sha512};
+
+/// SHA-256 hashing
+pub fn hash_sha256(data: &[u8]) -> Vec<u8> {
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    hasher.finalize().to_vec()
+}
+
+/// SHA-512 hashing
+pub fn hash_sha512(data: &[u8]) -> Vec<u8> {
+    let mut hasher = Sha512::new();
+    hasher.update(data);
+    hasher.finalize().to_vec()
+}
+
+/// Hash to hex string
+pub fn hash_to_hex(hash: &[u8]) -> String {
+    hash.iter()
+        .map(|b| format!("{:02x}", b))
+        .collect()
+}
+
+/// Verify data against hash
+pub fn verify_hash(data: &[u8], expected_hash: &[u8]) -> bool {
+    let actual_hash = hash_sha256(data);
+    constant_time_compare(&actual_hash, expected_hash)
+}
+
+/// Constant-time comparison to prevent timing attacks
+fn constant_time_compare(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+
+    let mut diff = 0u8;
+    for (byte_a, byte_b) in a.iter().zip(b.iter()) {
+        diff |= byte_a ^ byte_b;
+    }
+
+    diff == 0
+}
+
+/// AES encryption example (demonstration only - use proper libraries in production)
+pub fn aes_encrypt_demo(plaintext: &[u8], key: &[u8]) -> Result<Vec<u8>> {
+    use aes::Aes256;
+    use aes::cipher::{BlockEncrypt, KeyInit, generic_array::GenericArray};
+
+    if key.len() != 32 {
+        anyhow::bail!("Key must be 32 bytes for AES-256");
+    }
+
+    if plaintext.len() % 16 != 0 {
+        anyhow::bail!("Plaintext must be multiple of 16 bytes (use padding in production)");
+    }
+
+    let cipher = Aes256::new(GenericArray::from_slice(key));
+    let mut encrypted = plaintext.to_vec();
+
+    // Encrypt in 16-byte blocks
+    for chunk in encrypted.chunks_exact_mut(16) {
+        let block = GenericArray::from_mut_slice(chunk);
+        cipher.encrypt_block(block);
+    }
+
+    Ok(encrypted)
+}
+
+/// Password hashing with salt (basic example - use argon2 or bcrypt in production)
+pub fn hash_password(password: &str, salt: &[u8]) -> Vec<u8> {
+    let mut hasher = Sha256::new();
+    hasher.update(salt);
+    hasher.update(password.as_bytes());
+
+    // Multiple rounds for key stretching
+    let mut hash = hasher.finalize().to_vec();
+
+    for _ in 0..10000 {
+        let mut hasher = Sha256::new();
+        hasher.update(&hash);
+        hash = hasher.finalize().to_vec();
+    }
+
+    hash
+}
+
+pub fn demonstrate() -> Result<()> {
+    println!("Cryptography Examples\n");
+
+    // SHA-256 hashing
+    let data = b"Hello, Rust!";
+    let hash = hash_sha256(data);
+    let hex = hash_to_hex(&hash);
+
+    println!("SHA-256 Hash:");
+    println!("  Data: {}", String::from_utf8_lossy(data));
+    println!("  Hash: {}", hex);
+
+    // Verify hash
+    let is_valid = verify_hash(data, &hash);
+    println!("  Verification: {}", if is_valid { "✓ Valid" } else { "✗ Invalid" });
+
+    // SHA-512
+    let hash512 = hash_sha512(data);
+    println!("\nSHA-512 Hash:");
+    println!("  Hash: {}", hash_to_hex(&hash512));
+
+    // Password hashing
+    let password = "SecurePassword123!";
+    let salt = b"random_salt_value_here";
+    let password_hash = hash_password(password, salt);
+
+    println!("\nPassword Hashing:");
+    println!("  Password: {}", password);
+    println!("  Salt: {}", String::from_utf8_lossy(salt));
+    println!("  Hash: {}", hash_to_hex(&password_hash));
+
+    // Verify password
+    let test_password = "SecurePassword123!";
+    let test_hash = hash_password(test_password, salt);
+    let matches = constant_time_compare(&password_hash, &test_hash);
+    println!("  Verification: {}", if matches { "✓ Valid" } else { "✗ Invalid" });
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sha256_deterministic() {
+        let data = b"test";
+        let hash1 = hash_sha256(data);
+        let hash2 = hash_sha256(data);
+        assert_eq!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_hash_verification() {
+        let data = b"test data";
+        let hash = hash_sha256(data);
+        assert!(verify_hash(data, &hash));
+        assert!(!verify_hash(b"wrong data", &hash));
+    }
+
+    #[test]
+    fn test_constant_time_compare() {
+        let a = vec![1, 2, 3, 4];
+        let b = vec![1, 2, 3, 4];
+        let c = vec![1, 2, 3, 5];
+
+        assert!(constant_time_compare(&a, &b));
+        assert!(!constant_time_compare(&a, &c));
+    }
+
+    #[test]
+    fn test_password_hashing() {
+        let salt = b"salt";
+        let hash1 = hash_password("password", salt);
+        let hash2 = hash_password("password", salt);
+        let hash3 = hash_password("different", salt);
+
+        assert_eq!(hash1, hash2);
+        assert_ne!(hash1, hash3);
+    }
+}
+#+end_src
+
+** Examples Module Declaration
+
+#+begin_src rust :tangle ./rust/src/examples/mod.rs
+//! Standard library and common crate usage examples
+
+pub mod file_io;
+pub mod networking;
+pub mod database;
+pub mod parsing;
+pub mod crypto;
+
+// Note: chrono is used in networking module
+extern crate chrono;
+#+end_src
+
+
+* Concurrency and Parallelism
+
+Rust's ownership system makes concurrent programming safer by preventing data
+races at compile time. This section covers threads, async/await, message
+passing, and shared state.
+
+** Threads
+
+#+begin_src rust :tangle ./rust/src/concurrency/threads.rs
+//! Thread-based concurrency
+
+use std::sync::{Arc, Mutex, RwLock};
+use std::thread;
+use std::time::Duration;
+
+/// Basic thread spawning
+pub fn basic_threads() {
+    let handles: Vec<_> = (0..5)
+        .map(|i| {
+            thread::spawn(move || {
+                println!("Thread {} starting", i);
+                thread::sleep(Duration::from_millis(100));
+                println!("Thread {} done", i);
+                i * 2
+            })
+        })
+        .collect();
+
+    // Wait for all threads and collect results
+    for handle in handles {
+        match handle.join() {
+            Ok(result) => println!("Thread returned: {}", result),
+            Err(e) => eprintln!("Thread panicked: {:?}", e),
+        }
+    }
+}
+
+/// Shared state with Mutex
+///
+/// Mutex provides mutual exclusion - only one thread can access data at a time
+/// Arc (Atomic Reference Counting) allows sharing ownership across threads
+pub fn mutex_example() {
+    let counter = Arc::new(Mutex::new(0));
+    let mut handles = vec![];
+
+    for _ in 0..10 {
+        let counter = Arc::clone(&counter);
+        let handle = thread::spawn(move || {
+            for _ in 0..100 {
+                let mut num = counter.lock().unwrap();
+                *num += 1;
+            }
+        });
+        handles.push(handle);
+    }
+
+    for handle in handles {
+        handle.join().unwrap();
+    }
+
+    println!("Counter: {}", *counter.lock().unwrap());
+}
+
+/// RwLock for multiple readers or single writer
+///
+/// RwLock allows either:
+/// - Multiple concurrent readers
+/// - One exclusive writer
+///
+/// Better than Mutex when reads greatly outnumber writes
+pub fn rwlock_example() {
+    let data = Arc::new(RwLock::new(vec![1, 2, 3]));
+    let mut handles = vec![];
+
+    // Spawn reader threads
+    for i in 0..5 {
+        let data = Arc::clone(&data);
+        let handle = thread::spawn(move || {
+            let vec = data.read().unwrap();
+            println!("Reader {}: {:?}", i, *vec);
+            thread::sleep(Duration::from_millis(50));
+        });
+        handles.push(handle);
+    }
+
+    // Spawn writer thread
+    let data_writer = Arc::clone(&data);
+    let handle = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(100));
+        let mut vec = data_writer.write().unwrap();
+        vec.push(4);
+        println!("Writer: added element");
+    });
+    handles.push(handle);
+
+    for handle in handles {
+        handle.join().unwrap();
+    }
+
+    println!("Final data: {:?}", *data.read().unwrap());
+}
+
+/// Scoped threads for borrowing
+pub fn scoped_threads() {
+    let mut data = vec![1, 2, 3, 4, 5];
+
+    thread::scope(|s| {
+        // Can borrow data because scope guarantees threads finish before data is dropped
+        s.spawn(|| {
+            println!("Thread 1 reading: {:?}", data);
+        });
+
+        s.spawn(|| {
+            println!("Thread 2 reading: {:?}", data);
+        });
+    });
+
+    // Threads have finished, safe to mutate
+    data.push(6);
+    println!("Modified data: {:?}", data);
+}
+
+/// Thread pool pattern (simplified)
+pub struct ThreadPool {
+    workers: Vec<thread::JoinHandle<()>>,
+}
+
+impl ThreadPool {
+    pub fn new(size: usize) -> Self {
+        let workers = (0..size)
+            .map(|id| {
+                thread::spawn(move || {
+                    println!("Worker {} ready", id);
+                })
+            })
+            .collect();
+
+        Self { workers }
+    }
+
+    pub fn join(self) {
+        for worker in self.workers {
+            worker.join().unwrap();
+        }
+    }
+}
+
+pub fn demonstrate_threads() {
+    println!("=== Basic Threads ===");
+    basic_threads();
+
+    println!("\n=== Mutex Example ===");
+    mutex_example();
+
+    println!("\n=== RwLock Example ===");
+    rwlock_example();
+
+    println!("\n=== Scoped Threads ===");
+    scoped_threads();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mutex_counter() {
+        let counter = Arc::new(Mutex::new(0));
+        let mut handles = vec![];
+
+        for _ in 0..10 {
+            let counter = Arc::clone(&counter);
+            let handle = thread::spawn(move || {
+                let mut num = counter.lock().unwrap();
+                *num += 1;
+            });
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.join().unwrap();
+        }
+
+        assert_eq!(*counter.lock().unwrap(), 10);
+    }
+}
+#+end_src
+
+** Message Passing with Channels
+
+#+begin_src rust :tangle ./rust/src/concurrency/channels.rs
+//! Message passing with channels
+
+use std::sync::mpsc;
+use std::thread;
+use std::time::Duration;
+
+/// Basic channel usage
+pub fn basic_channel() {
+    let (tx, rx) = mpsc::channel();
+
+    thread::spawn(move || {
+        let messages = vec!["Hello", "from", "another", "thread"];
+
+        for msg in messages {
+            tx.send(msg).unwrap();
+            thread::sleep(Duration::from_millis(100));
+        }
+    });
+
+    // Receive messages
+    for received in rx {
+        println!("Received: {}", received);
+    }
+}
+
+/// Multiple producers, single consumer
+pub fn multiple_producers() {
+    let (tx, rx) = mpsc::channel();
+
+    let producers = 5;
+
+    for id in 0..producers {
+        let tx = tx.clone();
+        thread::spawn(move || {
+            for i in 0..3 {
+                let msg = format!("Producer {} message {}", id, i);
+                tx.send(msg).unwrap();
+                thread::sleep(Duration::from_millis(50));
+            }
+        });
+    }
+
+    // Drop original tx so receiver knows when all senders are done
+    drop(tx);
+
+    // Collect all messages
+    for received in rx {
+        println!("Received: {}", received);
+    }
+}
+
+/// Sync channel with bounded capacity
+pub fn sync_channel_example() {
+    let (tx, rx) = mpsc::sync_channel(2); // Buffer size = 2
+
+    thread::spawn(move || {
+        for i in 0..5 {
+            println!("Sending {}", i);
+            tx.send(i).unwrap();
+            println!("Sent {}", i);
+        }
+    });
+
+    thread::sleep(Duration::from_millis(500));
+
+    println!("Starting to receive...");
+    for received in rx {
+        println!("Received: {}", received);
+        thread::sleep(Duration::from_millis(200));
+    }
+}
+
+/// Worker pool with channel
+pub fn worker_pool() {
+    let (job_tx, job_rx) = mpsc::channel();
+    let (result_tx, result_rx) = mpsc::channel();
+
+    let job_rx = std::sync::Arc::new(std::sync::Mutex::new(job_rx));
+
+    // Spawn workers
+    let num_workers = 4;
+    for id in 0..num_workers {
+        let job_rx = std::sync::Arc::clone(&job_rx);
+        let result_tx = result_tx.clone();
+
+        thread::spawn(move || {
+            loop {
+                let job = {
+                    let rx = job_rx.lock().unwrap();
+                    rx.recv()
+                };
+
+                match job {
+                    Ok(job) => {
+                        println!("Worker {} processing job {}", id, job);
+                        thread::sleep(Duration::from_millis(100));
+                        let result = job * 2;
+                        result_tx.send(result).unwrap();
+                    }
+                    Err(_) => break, // Channel closed
+                }
+            }
+        });
+    }
+
+    // Send jobs
+    for job in 0..10 {
+        job_tx.send(job).unwrap();
+    }
+
+    drop(job_tx); // Signal workers to stop
+    drop(result_tx); // Drop original tx
+
+    // Collect results
+    let results: Vec<_> = result_rx.iter().collect();
+    println!("Results: {:?}", results);
+}
+
+pub fn demonstrate_channels() {
+    println!("=== Basic Channel ===");
+    basic_channel();
+
+    println!("\n=== Multiple Producers ===");
+    multiple_producers();
+
+    println!("\n=== Sync Channel ===");
+    sync_channel_example();
+
+    println!("\n=== Worker Pool ===");
+    worker_pool();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_channel() {
+        let (tx, rx) = mpsc::channel();
+        tx.send(42).unwrap();
+        assert_eq!(rx.recv().unwrap(), 42);
+    }
+
+    #[test]
+    fn test_multiple_senders() {
+        let (tx, rx) = mpsc::channel();
+
+        for i in 0..5 {
+            let tx = tx.clone();
+            thread::spawn(move || {
+                tx.send(i).unwrap();
+            });
+        }
+
+        drop(tx);
+
+        let mut received = rx.iter().collect::<Vec<_>>();
+        received.sort();
+        assert_eq!(received, vec![0, 1, 2, 3, 4]);
+    }
+}
+#+end_src
+
+** Async/Await
+
+#+begin_src rust :tangle ./rust/src/concurrency/async_await.rs
+//! Async/await with tokio runtime
+
+use std::time::Duration;
+use tokio::time::sleep;
+
+/// Basic async function
+pub async fn async_hello() {
+    println!("Hello from async");
+    sleep(Duration::from_millis(100)).await;
+    println!("Async done");
+}
+
+/// Concurrent async tasks
+pub async fn concurrent_tasks() {
+    let task1 = async {
+        println!("Task 1 starting");
+        sleep(Duration::from_millis(200)).await;
+        println!("Task 1 done");
+        "result 1"
+    };
+
+    let task2 = async {
+        println!("Task 2 starting");
+        sleep(Duration::from_millis(100)).await;
+        println!("Task 2 done");
+        "result 2"
+    };
+
+    // Run concurrently
+    let (r1, r2) = tokio::join!(task1, task2);
+    println!("Results: {}, {}", r1, r2);
+}
+
+/// Select first completed task
+pub async fn select_example() {
+    let task1 = async {
+        sleep(Duration::from_millis(200)).await;
+        "slow task"
+    };
+
+    let task2 = async {
+        sleep(Duration::from_millis(100)).await;
+        "fast task"
+    };
+
+    tokio::select! {
+        r = task1 => println!("task1 finished first: {}", r),
+        r = task2 => println!("task2 finished first: {}", r),
+    }
+}
+
+/// Spawn background tasks
+pub async fn spawn_tasks() {
+    let mut handles = vec![];
+
+    for i in 0..5 {
+        let handle = tokio::spawn(async move {
+            println!("Task {} starting", i);
+            sleep(Duration::from_millis(100)).await;
+            println!("Task {} done", i);
+            i * 2
+        });
+        handles.push(handle);
+    }
+
+    // Wait for all and collect results
+    for handle in handles {
+        match handle.await {
+            Ok(result) => println!("Task returned: {}", result),
+            Err(e) => eprintln!("Task failed: {}", e),
+        }
+    }
+}
+
+/// Async mutex for async code
+pub async fn async_mutex() {
+    use tokio::sync::Mutex;
+    use std::sync::Arc;
+
+    let data = Arc::new(Mutex::new(0));
+    let mut handles = vec![];
+
+    for _ in 0..10 {
+        let data = Arc::clone(&data);
+        let handle = tokio::spawn(async move {
+            for _ in 0..100 {
+                let mut num = data.lock().await;
+                *num += 1;
+            }
+        });
+        handles.push(handle);
+    }
+
+    for handle in handles {
+        handle.await.unwrap();
+    }
+
+    println!("Counter: {}", *data.lock().await);
+}
+
+/// Async channels
+pub async fn async_channels() {
+    use tokio::sync::mpsc;
+
+    let (tx, mut rx) = mpsc::channel(10);
+
+    // Spawn producer
+    tokio::spawn(async move {
+        for i in 0..5 {
+            tx.send(i).await.unwrap();
+            sleep(Duration::from_millis(100)).await;
+        }
+    });
+
+    // Consume messages
+    while let Some(msg) = rx.recv().await {
+        println!("Received: {}", msg);
+    }
+}
+
+pub async fn demonstrate_async() {
+    println!("=== Async Hello ===");
+    async_hello().await;
+
+    println!("\n=== Concurrent Tasks ===");
+    concurrent_tasks().await;
+
+    println!("\n=== Select Example ===");
+    select_example().await;
+
+    println!("\n=== Spawn Tasks ===");
+    spawn_tasks().await;
+
+    println!("\n=== Async Mutex ===");
+    async_mutex().await;
+
+    println!("\n=== Async Channels ===");
+    async_channels().await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_async_function() {
+        async_hello().await;
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_execution() {
+        let start = std::time::Instant::now();
+        concurrent_tasks().await;
+        let duration = start.elapsed();
+
+        // Should take ~200ms, not 300ms
+        assert!(duration.as_millis() < 250);
+    }
+}
+#+end_src
+
+** Parallel Processing with Rayon
+
+#+begin_src rust :tangle ./rust/src/concurrency/parallel.rs
+//! Parallel processing with rayon
+
+use rayon::prelude::*;
+
+/// Parallel iteration
+pub fn parallel_iteration() {
+    let numbers: Vec<i32> = (0..1000).collect();
+
+    let sum: i32 = numbers.par_iter().sum();
+    println!("Parallel sum: {}", sum);
+
+    let squared: Vec<i32> = numbers.par_iter().map(|&x| x * x).collect();
+    println!("First 10 squared: {:?}", &squared[..10]);
+}
+
+/// Parallel sorting
+pub fn parallel_sort() {
+    let mut numbers: Vec<i32> = (0..10000).rev().collect();
+
+    // Parallel quicksort
+    numbers.par_sort_unstable();
+
+    println!("Sorted {} numbers in parallel", numbers.len());
+    println!("First 10: {:?}", &numbers[..10]);
+}
+
+/// Parallel filter and map
+pub fn parallel_filter_map() {
+    let numbers: Vec<i32> = (0..1000).collect();
+
+    let result: Vec<i32> = numbers
+        .par_iter()
+        .filter(|&&x| x % 2 == 0)
+        .map(|&x| x * x)
+        .collect();
+
+    println!("Parallel filter+map result length: {}", result.len());
+    println!("First 10: {:?}", &result[..10]);
+}
+
+/// Parallel fold (reduce)
+pub fn parallel_fold() {
+    let numbers: Vec<i32> = (1..=100).collect();
+
+    let product: i64 = numbers
+        .par_iter()
+        .map(|&x| x as i64)
+        .reduce(|| 1, |a, b| a * b);
+
+    println!("Parallel product: {}", product);
+}
+
+/// Custom parallel computation
+pub fn parallel_computation() {
+    use std::time::Instant;
+
+    fn is_prime(n: u64) -> bool {
+        if n < 2 {
+            return false;
+        }
+        for i in 2..=(n as f64).sqrt() as u64 {
+            if n % i == 0 {
+                return false;
+            }
+        }
+        true
+    }
+
+    let numbers: Vec<u64> = (2..10000).collect();
+
+    let start = Instant::now();
+    let primes_seq: Vec<u64> = numbers.iter().filter(|&&n| is_prime(n)).copied().collect();
+    let seq_duration = start.elapsed();
+
+    let start = Instant::now();
+    let primes_par: Vec<u64> = numbers.par_iter().filter(|&&n| is_prime(n)).copied().collect();
+    let par_duration = start.elapsed();
+
+    println!("Found {} primes", primes_seq.len());
+    println!("Sequential: {:?}", seq_duration);
+    println!("Parallel:   {:?}", par_duration);
+    println!("Speedup: {:.2}x", seq_duration.as_secs_f64() / par_duration.as_secs_f64());
+
+    assert_eq!(primes_seq, primes_par);
+}
+
+pub fn demonstrate_parallel() {
+    println!("=== Parallel Iteration ===");
+    parallel_iteration();
+
+    println!("\n=== Parallel Sort ===");
+    parallel_sort();
+
+    println!("\n=== Parallel Filter+Map ===");
+    parallel_filter_map();
+
+    println!("\n=== Parallel Fold ===");
+    parallel_fold();
+
+    println!("\n=== Parallel Computation ===");
+    parallel_computation();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parallel_sum() {
+        let numbers: Vec<i32> = (1..=100).collect();
+        let sum: i32 = numbers.par_iter().sum();
+        assert_eq!(sum, 5050);
+    }
+}
+#+end_src
+
+** Concurrency Module Declaration
+
+#+begin_src rust :tangle ./rust/src/concurrency/mod.rs
+//! Concurrency and parallelism examples
+
+pub mod threads;
+pub mod channels;
+pub mod async_await;
+pub mod parallel;
+
+pub use threads::*;
+pub use channels::*;
+pub use async_await::*;
+pub use parallel::*;
+#+end_src
+
+
+* Best Practices
+
+This section covers idiomatic Rust patterns, error handling strategies,
+testing, and performance considerations.
+
+** Error Handling
+
+Rust uses Result and Option types for error handling instead of exceptions.
+
+#+begin_src rust :tangle ./rust/src/best_practices.rs
+//! Best practices demonstrations
+
+use anyhow::{Context, Result};
+use thiserror::Error;
+
+/// Custom error types with thiserror
+#[derive(Error, Debug)]
+pub enum DataStoreError {
+    #[error("Key not found: {key}")]
+    KeyNotFound { key: String },
+
+    #[error("Invalid data format: {0}")]
+    InvalidFormat(String),
+
+    #[error("Connection failed")]
+    ConnectionFailed(#[from] std::io::Error),
+
+    #[error("Serialization error")]
+    SerializationError(#[from] serde_json::Error),
+}
+
+/// Error handling with Result and ?  operator
+pub fn read_config(path: &str) -> Result<String> {
+    std::fs::read_to_string(path)
+        .with_context(|| format!("Failed to read config from {}", path))
+}
+
+/// Chaining results with ?
+pub fn process_config(path: &str) -> Result<serde_json::Value> {
+    let content = read_config(path)?;
+    let json = serde_json::from_str(&content)
+        .context("Failed to parse config as JSON")?;
+    Ok(json)
+}
+
+/// Pattern matching on Results
+pub fn handle_result(result: Result<i32>) {
+    match result {
+        Ok(value) => println!("Success: {}", value),
+        Err(e) => eprintln!("Error: {:#}", e),
+    }
+}
+
+/// Converting errors
+pub fn convert_error() -> Result<(), DataStoreError> {
+    let _json = serde_json::from_str::<serde_json::Value>("invalid")?;
+    Ok(())
+}
+
+/// Early returns vs nested match
+pub fn early_return(x: Option<i32>, y: Option<i32>) -> Option<i32> {
+    let x = x?;
+    let y = y?;
+    Some(x + y)
+}
+
+// Bad: nested matching
+#[allow(dead_code)]
+fn nested_match(x: Option<i32>, y: Option<i32>) -> Option<i32> {
+    match x {
+        Some(x) => match y {
+            Some(y) => Some(x + y),
+            None => None,
+        },
+        None => None,
+    }
+}
+
+#[cfg(test)]
+mod error_tests {
+    use super::*;
+
+    #[test]
+    fn test_early_return() {
+        assert_eq!(early_return(Some(5), Some(3)), Some(8));
+        assert_eq!(early_return(Some(5), None), None);
+        assert_eq!(early_return(None, Some(3)), None);
+    }
+}
+#+end_src
+
+** Testing
+
+#+begin_src rust :tangle ./rust/tests/integration_test.rs
+//! Integration tests
+
+#[test]
+fn test_library_integration() {
+    use rust_notes::collections::hash_collections::word_frequency;
+
+    let text = "hello world hello rust";
+    let freq = word_frequency(text);
+
+    assert_eq!(freq.get("hello"), Some(&2));
+    assert_eq!(freq.get("world"), Some(&1));
+    assert_eq!(freq.get("rust"), Some(&1));
+}
+
+#[test]
+fn test_algorithm_integration() {
+    use rust_notes::algorithms::sorting::quicksort;
+
+    let mut arr = vec![5, 2, 8, 1, 9];
+    quicksort(&mut arr);
+
+    assert_eq!(arr, vec![1, 2, 5, 8, 9]);
+}
+
+#[test]
+fn test_graph_algorithms() {
+    use rust_notes::algorithms::graphs::{dijkstra, Graph};
+
+    let mut graph = Graph::new();
+    graph.add_edge("A", "B", 1);
+    graph.add_edge("B", "C", 2);
+
+    let (distances, _) = dijkstra(&graph, &"A");
+
+    assert_eq!(distances.get(&"A"), Some(&0));
+    assert_eq!(distances.get(&"B"), Some(&1));
+    assert_eq!(distances.get(&"C"), Some(&3));
+}
+#+end_src
+
+** Benchmarking
+
+#+begin_src rust :tangle ./rust/benches/benchmarks.rs
+//! Benchmarks using criterion
+
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use rust_notes::algorithms::sorting::quicksort;
+
+fn bench_quicksort(c: &mut Criterion) {
+    c.bench_function("quicksort 1000", |b| {
+        b.iter(|| {
+            let mut arr: Vec<i32> = (0..1000).rev().collect();
+            quicksort(black_box(&mut arr));
+        });
+    });
+
+    c.bench_function("quicksort 10000", |b| {
+        b.iter(|| {
+            let mut arr: Vec<i32> = (0..10000).rev().collect();
+            quicksort(black_box(&mut arr));
+        });
+    });
+}
+
+fn bench_vec_operations(c: &mut Criterion) {
+    c.bench_function("vec push 1000", |b| {
+        b.iter(|| {
+            let mut vec = Vec::new();
+            for i in 0..1000 {
+                vec.push(black_box(i));
+            }
+        });
+    });
+
+    c.bench_function("vec with_capacity push 1000", |b| {
+        b.iter(|| {
+            let mut vec = Vec::with_capacity(1000);
+            for i in 0..1000 {
+                vec.push(black_box(i));
+            }
+        });
+    });
+}
+
+criterion_group!(benches, bench_quicksort, bench_vec_operations);
+criterion_main!(benches);
+#+end_src
+
+** Performance Tips
+
+*** Zero-Cost Abstractions
+
+Rust's abstractions compile down to efficient machine code with no runtime
+overhead. Iterators, closures, and generics are as fast as hand-written loops.
+
+#+begin_src rust
+// High-level iterator code
+let sum: i32 = (1..=100).filter(|x| x % 2 == 0).sum();
+
+// Compiles to efficient code equivalent to:
+let mut sum = 0;
+for i in 1..=101 {
+    if i % 2 == 0 {
+        sum += i;
+    }
+}
+#+end_src
+
+*** Avoid Unnecessary Allocations
+
+- Use &str instead of String when possible
+- Use Vec::with_capacity() when size is known
+- Use Cow<str> for clone-on-write semantics
+- Use string formatting efficiently with format_args!
+
+*** Inline Hints
+
+#+begin_src rust
+#[inline]
+pub fn small_function(x: i32) -> i32 {
+    x * 2
+}
+
+#[inline(always)]
+pub fn must_inline(x: i32) -> i32 {
+    x + 1
+}
+#+end_src
+
+*** Profile Before Optimizing
+
+Use profiling tools to identify actual bottlenecks:
+
+#+begin_src bash
+# CPU profiling with perf
+perf record --call-graph=dwarf ./target/release/my_program
+perf report
+
+# Flamegraph visualization
+cargo flamegraph --bin my_program
+
+# Memory profiling with valgrind
+valgrind --tool=massif ./target/release/my_program
+#+end_src
+#+end_src
+
+** API Design Patterns
+
+*** Builder Pattern
+
+#+begin_src rust
+pub struct Config {
+    host: String,
+    port: u16,
+    timeout: u64,
+}
+
+pub struct ConfigBuilder {
+    host: String,
+    port: u16,
+    timeout: u64,
+}
+
+impl ConfigBuilder {
+    pub fn new() -> Self {
+        Self {
+            host: "localhost".to_string(),
+            port: 8080,
+            timeout: 30,
+        }
+    }
+
+    pub fn host(mut self, host: impl Into<String>) -> Self {
+        self.host = host.into();
+        self
+    }
+
+    pub fn port(mut self, port: u16) -> Self {
+        self.port = port;
+        self
+    }
+
+    pub fn timeout(mut self, timeout: u64) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    pub fn build(self) -> Config {
+        Config {
+            host: self.host,
+            port: self.port,
+            timeout: self.timeout,
+        }
+    }
+}
+
+// Usage:
+let config = ConfigBuilder::new()
+    .host("example.com")
+    .port(443)
+    .timeout(60)
+    .build();
+#+end_src
+
+*** Type-State Pattern
+
+#+begin_src rust
+// Use type system to enforce state transitions at compile time
+
+pub struct Locked;
+pub struct Unlocked;
+
+pub struct Door<State = Locked> {
+    _state: std::marker::PhantomData<State>,
+}
+
+impl Door<Locked> {
+    pub fn new() -> Self {
+        Self {
+            _state: std::marker::PhantomData,
+        }
+    }
+
+    pub fn unlock(self) -> Door<Unlocked> {
+        Door {
+            _state: std::marker::PhantomData,
+        }
+    }
+}
+
+impl Door<Unlocked> {
+    pub fn open(&self) {
+        println!("Door opened");
+    }
+
+    pub fn lock(self) -> Door<Locked> {
+        Door {
+            _state: std::marker::PhantomData,
+        }
+    }
+}
+
+// Usage:
+let door = Door::new();           // Door<Locked>
+let door = door.unlock();         // Door<Unlocked>
+door.open();                      // OK
+// door.unlock();                 // Compile error!
+let door = door.lock();           // Door<Locked>
+// door.open();                   // Compile error!
+#+end_src
+
+*** Newtype Pattern
+
+#+begin_src rust
+// Wrap existing types for type safety
+
+pub struct UserId(u64);
+pub struct ProductId(u64);
+
+// Now these can't be confused at compile time
+fn get_user(id: UserId) { /* ... */ }
+fn get_product(id: ProductId) { /* ... */ }
+
+let user_id = UserId(42);
+let product_id = ProductId(42);
+
+get_user(user_id);           // OK
+get_user(product_id);        // Compile error!
+#+end_src
+
+** Safety and Unsafe
+
+Rust's safety guarantees can be bypassed with the ~unsafe~ keyword, but this
+should be rare and carefully encapsulated.
+
+*** When to Use Unsafe
+
+- FFI (Foreign Function Interface) to C libraries
+- Performance-critical code requiring manual memory management
+- Implementing low-level primitives
+- Working with raw pointers
+
+*** Rules for Unsafe Code
+
+1. Keep unsafe blocks as small as possible
+2. Document safety invariants
+3. Encapsulate unsafe code in safe abstractions
+4. Test thoroughly
+
+#+begin_src rust
+/// Safe abstraction over unsafe code
+pub struct RawBuffer {
+    ptr: *mut u8,
+    len: usize,
+    capacity: usize,
+}
+
+impl RawBuffer {
+    pub fn new(capacity: usize) -> Self {
+        let layout = std::alloc::Layout::array::<u8>(capacity).unwrap();
+
+        // SAFETY: Layout is valid and non-zero
+        let ptr = unsafe { std::alloc::alloc(layout) };
+
+        if ptr.is_null() {
+            std::alloc::handle_alloc_error(layout);
+        }
+
+        Self {
+            ptr,
+            len: 0,
+            capacity,
+        }
+    }
+
+    pub fn push(&mut self, byte: u8) {
+        if self.len >= self.capacity {
+            panic!("Buffer full");
+        }
+
+        // SAFETY: We checked bounds above
+        unsafe {
+            *self.ptr.add(self.len) = byte;
+        }
+        self.len += 1;
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        // SAFETY: ptr is valid, len is within bounds
+        unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
+    }
+}
+
+impl Drop for RawBuffer {
+    fn drop(&mut self) {
+        if !self.ptr.is_null() {
+            let layout = std::alloc::Layout::array::<u8>(self.capacity).unwrap();
+            // SAFETY: ptr was allocated with same layout
+            unsafe {
+                std::alloc::dealloc(self.ptr, layout);
+            }
+        }
+    }
+}
+#+end_src
+
+
+* External referentes
+- https://doc.rust-lang.org/book/
