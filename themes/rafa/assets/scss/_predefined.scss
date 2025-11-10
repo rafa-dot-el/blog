@@ -1,0 +1,189 @@
+// Colors
+//
+
+// Sorts Mill Goudy - Local hosting
+@font-face {
+  font-family: 'Sorts Mill Goudy';
+  src: url('/blog/fonts/SortsMillGoudy-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Sorts Mill Goudy';
+  src: url('/blog/fonts/SortsMillGoudy-Italic.ttf') format('truetype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+// Suwannaphum - Local hosting
+@font-face {
+  font-family: 'Suwannaphum';
+  src: url('/blog/fonts/Suwannaphum-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Suwannaphum';
+  src: url('/blog/fonts/Suwannaphum-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+// Tamzen - Local hosting
+@font-face {
+  font-family: 'Tamzen';
+  src: url('/blog/fonts/Tamzen8x16r.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: 'Tamzen';
+  src: url('/blog/fonts/Tamzen8x16b.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+}
+
+$theme: #25272c;
+$text: #d2d1cd;
+$light-grey: #505050;
+$dark-grey: #212121;
+$highlight-grey: #505050;
+$midnightblue: #2c3032;
+
+// Fonts
+//
+//$fonts: "Trebuchet MS", Verdana, "Verdana Ref", "Segoe UI", Candara, "Lucida Grande", "Lucida Sans Unicode", "Lucida Sans", Tahoma, sans-serif;
+//$code-fonts: Consolas, "Andale Mono WT", "Andale Mono", Menlo, Monaco, "Lucida Console", "Lucida Sans Typewriter", "DejaVu Sans Mono", "Bitstream Vera Sans Mono", "Liberation Mono", "Nimbus Mono L", "Courier New", Courier, "YaHei Consolas Hybrid", monospace, "Segoe UI Emoji", "PingFang SC", "Microsoft YaHei";
+$code-fonts: 'Tamzen', monospace;
+$fonts: 'Sorts Mill Goudy', serif;
+
+// Font Sizes - Three-Tier System
+//
+// This system provides centralized control over all font sizes in the theme
+// with three layers of abstraction for maximum flexibility:
+//
+// 1. BASE LAYER: Foundation sizes that control the entire scale
+// 2. SEMANTIC SCALE: Named size scale (xs, sm, md, lg, xl, etc.)
+// 3. COMPONENT LAYER: Semantic mappings for specific UI elements
+//
+// To globally adjust all font sizes, modify $font-size-base or $font-size-scale-ratio
+// To adjust groups of elements, modify semantic scale variables
+// To adjust individual elements, modify component-specific variables
+
+// 1. BASE LAYER - Foundation
+//
+$font-size-root: 16px;               // Root html font-size (1rem = this value)
+$font-size-body: 1.3rem;               // Body text baseline
+$font-size-scale-ratio: 1.3;         // Multiplier for modular scale
+
+// 2. SEMANTIC SCALE - Size Ladder
+//
+// All sizes use rem units for consistent scaling relative to root font size
+// Unique sizes from original theme have been rounded to fit the scale:
+// - 0.85rem (footnotes) → 0.9rem
+// - 1.6rem (post-year) → 1.5rem
+$font-size-xs: 0.6rem;    // Extra small
+$font-size-sm: 0.7rem;    // Small
+$font-size-md: 0.8rem;    // Medium-small
+$font-size-base: 1rem;  // Base component size (not body text)
+$font-size-lg: 1.1rem;    // Large
+$font-size-xl: 1.2rem;    // Extra large
+$font-size-2xl: 1.4rem;   // 2X large
+$font-size-3xl: 1.5rem;   // 3X large (also used for post-year, originally 1.6rem)
+$font-size-4xl: 2rem;     // 4X large
+$font-size-5xl: 3rem;     // 5X large
+
+// Typography Elements - Modular Scale
+//
+// Heading hierarchy using modular scale (ratio: 1.15)
+// Adjusted for better visual hierarchy and readability
+$font-size-h1: 3rem;                              // H1 - Largest heading (3rem)
+$font-size-h2: 2.5rem;                            // H2 - (2.5rem, was 2.5rem)
+$font-size-h3: 2rem;                              // H3 - (2rem, was 1.389rem)
+$font-size-h4: 1.6rem;                            // H4 - (1.6rem, was 1.2rem)
+$font-size-h5: 1.3rem;                            // H5 - (1.3rem, was 1rem)
+$font-size-h6: 1.1rem;                            // H6 - (1.1rem, was 0.833rem)
+
+// Content Typography
+$font-size-paragraph: $font-size-body;            // Paragraph text
+$font-size-blockquote: $font-size-body;           // Blockquote text
+$font-size-list: $font-size-body;                 // List items (ul, ol, li)
+
+// 3. COMPONENT LAYER - Semantic Mappings
+//
+// Navigation & Header
+$font-size-header-wrapper: $font-size-xl;     // 1.2rem
+$font-size-site-branding: $font-size-xl;      // 1.2rem
+$font-size-site-nav: $font-size-lg;           // 1.1rem
+$font-size-nav-icons: $font-size-xl;          // 1.2rem
+$font-size-mobile-menu: $font-size-xl;        // 1.2rem
+$font-size-submenu: $font-size-sm;            // 0.7rem
+
+// Content & Typography
+$font-size-code-block: $font-size-base;       // 0.9rem
+$font-size-code-copy-btn: 0.8rem;             // 0.8rem
+$font-size-post-meta: $font-size-base;        // 0.9rem
+$font-size-post-info: $font-size-md;          // 0.8rem
+$font-size-figure-caption: $font-size-md;     // 0.8rem
+$font-size-footnotes: $font-size-base;        // 0.9rem (originally 0.85rem)
+
+// Lists & Table of Contents
+$font-size-post-year: $font-size-3xl;         // 1.5rem (originally 1.6rem)
+$font-size-toc-title: $font-size-lg;          // 1.1rem
+$font-size-toc-content: $font-size-base;      // 1rem
+$font-size-toc-nested: $font-size-lg;         // 1.1rem
+
+// Home/Spotlight Section
+$font-size-spotlight: $font-size-3xl;         // 1.5rem
+$font-size-home-subtitle: $font-size-sm;      // 0.7rem
+$font-size-home-social: $font-size-2xl;       // 1.4rem
+$font-size-home-footer: $font-size-xs;        // 0.6rem
+$font-size-404-heading: $font-size-5xl;       // 3rem
+$font-size-404-button: $font-size-md;         // 0.8rem
+
+// Post Navigation
+$font-size-post-nav: $font-size-xl;           // 1.2rem
+$font-size-post-nav-label: $font-size-md;     // 0.8rem
+
+// Footer & Related Posts
+$font-size-site-footer: $font-size-base;      // 0.9rem
+$font-size-related-posts: $font-size-md;      // 0.8rem
+
+// Accessibility
+$font-size-screen-reader: 0.875rem;           // 14px equivalent
+
+// Normalize.css - Standard HTML Elements
+// These maintain browser compatibility while allowing centralized control
+// Note: Heading sizes (h1-h6) are defined in Typography Elements section above
+$font-size-pre: 1rem;                         // Pre-formatted text
+$font-size-code: 1rem;                        // Inline code, kbd, samp
+$font-size-small: 0.8rem;                     // Small text (80% → 0.8rem)
+$font-size-sub-sup: 0.75rem;                  // Subscript/superscript
+$font-size-form: 1rem;                        // Form elements (100% → 1rem)
+
+// Mixins
+//
+@mixin dimmed {
+  opacity: .6;
+}
+
+@mixin aTag {
+  a {
+    word-wrap: break-word;
+    border: none;
+    box-shadow: inset 0 -4px 0 $theme;
+    transition-property: box-shadow;
+    transition-duration: .1s;
+
+    &:hover {
+      box-shadow: inset 0 -1em 0 $theme;
+    }
+  }
+}

@@ -1,0 +1,20 @@
+#+title: Site Features
+#+date: 2025-01-10
+#+draft: false
+#+type: features
+
+* Vim-style Navigation
+
+This site supports vim-style keyboard navigation for efficient browsing.
+
+| Key Binding     | Action                                          |
+|-----------------+-------------------------------------------------|
+| =j= / =k=           | Scroll down/up smoothly                         |
+| =Alt+j= / =Alt+k=   | Jump to next/previous navigation bar component  |
+| =Ctrl+j= / =Ctrl+k= | Jump to next/previous code block                |
+| =J= / =K=           | Jump to next/previous heading                   |
+| =gg=              | Jump to top of page                             |
+| =G=               | Jump to bottom of page                          |
+| =f=               | Show link hints for keyboard navigation         |
+| =Esc=             | Close link hints or modals                      |
+

@@ -1,0 +1,100 @@
+BTRFS /data Filesystem State at Balance Failure
+===============================================
+Date: August 11, 2025 (During Diagnosis)
+Error: -30 (EROFS - Read-Only File System)
+
+Command: sudo btrfs filesystem usage /data
+-------------------------------------------
+
+Overall:
+    Device size:                  38.20TiB
+    Device allocated:             37.95TiB
+    Device unallocated:           256.00GiB  <- CRITICAL: Insufficient free space
+    Device reserved:              512.00MiB
+    Used:                         32.48TiB
+    Free (estimated):             5.44TiB    (min: 5.31TiB)
+    Free (statfs, df):            5.44TiB
+    Data ratio:                   1.00
+    Metadata ratio:               2.00
+    Global reserve:               512.00MiB  (used: 0.00B)
+    Multiple profiles:            yes (data, metadata, system)  <- PROBLEM: Incomplete migration
+
+Data Profiles (MIXED - Problem State):
+---------------------------------------
+Data,single: Size:37.67TiB, Used:32.26TiB (85.65%)
+   /dev/mapper/mass      16.13TiB   <- Older single profile chunks
+   /dev/mapper/mass2     21.54TiB
+
+Data,RAID0: Size:145.94GiB, Used:129.53GiB (88.76%)
+   /dev/mapper/mass      72.97GiB   <- Newly created RAID0 chunks
+   /dev/mapper/mass2     72.97GiB
+
+Metadata Profiles (MIXED - Problem State):
+-------------------------------------------
+Metadata,RAID1: Size:6.00GiB, Used:5.39GiB (89.85%)  <- Partially migrated
+   /dev/mapper/mass      6.00GiB
+   /dev/mapper/mass2     6.00GiB
+
+Metadata,DUP: Size:63.00GiB, Used:39.87GiB (63.28%)  <- Old profile still present
+   /dev/mapper/mass      63.00GiB   <- Taking up space on smaller disk
+
+System Profiles (MIXED - Problem State):
+-----------------------------------------
+System,RAID1: Size:32.00MiB, Used:64.00KiB (0.20%)   <- Successfully migrated
+   /dev/mapper/mass      32.00MiB
+   /dev/mapper/mass2     32.00MiB
+
+System,DUP: Size:8.00MiB, Used:4.02MiB (50.20%)      <- Old profile remnant
+   /dev/mapper/mass      8.00MiB
+
+Unallocated Space by Device:
+-----------------------------
+   /dev/mapper/mass      256.00GiB  <- All free space on smaller disk
+   /dev/mapper/mass2     1.00MiB    <- Virtually no space on larger disk
+
+
+Root Cause Analysis:
+====================
+
+Problem: Balance operation ran out of space during metadata migration
+
+Why it failed:
+1. Filesystem was 85-90% full before starting migration (only 256 GB free)
+2. Balance must create NEW chunks in target profile before removing OLD chunks
+3. This temporarily requires space for BOTH old and new metadata
+4. With only 256 GB free, insufficient space to complete metadata conversion
+5. When space exhausted, filesystem forced to read-only (error -30)
+
+Mixed Profile State Indicates:
+- System profile: Fully migrated to RAID1 (32 MiB) + old DUP remnant (8 MiB)
+- Metadata profile: Partially migrated to RAID1 (6 GB) + majority still DUP (63 GB)
+- Data profile: Partially migrated to RAID0 (146 GB) + majority still single (37.67 TiB)
+
+Why the larger disk has no free space:
+- RAID profiles require equal space on each device
+- 256 GB on smaller disk can only create 256 GB of RAID0/RAID1 chunks
+- Larger disk (21.83 TiB) already 99.999% full from old single-profile data
+- No room to create additional RAID1 metadata pairs
+
+Space Requirements for Completion:
+- Need ~120 GB for remaining metadata conversion (63 GB DUP → RAID1)
+- Need ~38 TB for remaining data conversion (37.67 TiB single → RAID0)
+- Total: ~500 GB free space recommended (only had 256 GB)
+
+The Trap:
+---------
+Users often start balance operations on full filesystems assuming:
+"I'm just converting profiles, not adding data, so space shouldn't matter"
+
+Reality:
+Balance must maintain TWO copies of data during migration:
+1. Original chunks in old profile
+2. New chunks in new profile
+
+Only after new chunks are populated can old chunks be freed.
+This requires significant temporary overhead.
+
+Solution Required:
+------------------
+Add temporary device to provide additional space for completing migration,
+then remove temporary device after chunks are redistributed.

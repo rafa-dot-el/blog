@@ -1,0 +1,122 @@
+#+title: Open Source Licensing and Compliance for Corporations
+#+Date: 2025-09-30
+#+Draft: true
+#+Tags[]: opensource licensing compliance legal
+#+PROPERTY: header-args :eval never-export
+
+Corporations often adopt open-source software without reviewing license terms,
+creating significant legal liability. Understanding open-source licensing is
+essential because different licenses impose different obligations for use,
+modification, distribution, and commercialization. Copyleft licenses require
+modifications to be released under the same terms, while permissive licenses
+allow proprietary derivatives.
+
+Non-compliance with open-source licenses can lead to legal disputes, financial
+penalties, intellectual property issues, and reputational damage. Understanding
+licensing allows corporations to select software that aligns with their business
+model and compliance requirements. In the following sections we examine common
+open-source licenses and their corporate implications.
+
+|----------------------------+-----------------------+-----------------------+----------------------------------------------+--------------+---------------------+---------------------------------+--------------------------|
+| License                    | Can be used in        | Can be compiled with  | Must be distributed separately               | Can be sold? | Can be distributed? | Can be altered and distributed? | Can the trademark be     |
+|                            | proprietary software? | proprietary software? | from proprietary software?                   |              |                     |                                 | changed and distributed? |
+|----------------------------+-----------------------+-----------------------+----------------------------------------------+--------------+---------------------+---------------------------------+--------------------------|
+| Apache License 2.0         | Yes                   | Yes                   | No (source code must be included)            | Yes          | Yes                 | Yes                             | Yes                      |
+| BSD 2-Clause License       | Yes                   | Yes                   | No (source code must be included)            | Yes          | Yes                 | Yes                             | Yes                      |
+| BSD 3-Clause License       | Yes                   | Yes                   | No (source code must be included)            | Yes          | Yes                 | Yes                             | Yes                      |
+| GPL v2                     | No                    | No                    | Yes                                          | No           | Yes                 | Yes                             | No                       |
+| GPL v3                     | No                    | No                    | Yes                                          | No           | Yes                 | Yes                             | No                       |
+| LGPL v3                    | Yes                   | Yes                   | No (modifications be released under LGPL v3) | Yes          | Yes                 | Yes                             | Yes                      |
+| MIT License                | Yes                   | Yes                   | No (license must be included)                | Yes          | Yes                 | Yes                             | Yes                      |
+| Mozilla Public License 2.0 | Yes                   | Yes                   | No (source code must be included)            | Yes          | Yes                 | Yes                             | Yes                      |
+| GNU AGPL v3                | No                    | No                    | Yes                                          | No           | Yes                 | Yes                             | No                       |
+|----------------------------+-----------------------+-----------------------+----------------------------------------------+--------------+---------------------+---------------------------------+--------------------------|
+
+* GNU General Public License (GPL)
+The GPL is one of the most popular open-source licenses and requires any
+modified versions of the software to be licensed under the GPL as well.
+The benefits of using the GPL include the ability to freely use and
+distribute the software, the ability to modify the software to fit
+specific needs, and the ability to contribute back to the open-source
+community. However, the downside of using the GPL is that it can be
+restrictive for corporations that want to use the software in
+proprietary products.
+
+* Apache License
+The Apache License is another popular open-source license that allows
+for more flexibility than the GPL. The license allows for modifications
+to the software to be distributed under different terms, including
+proprietary terms. The benefits of using the Apache License include the
+ability to use and modify the software without being required to
+distribute the modifications under the same license. However, the
+downside of using the Apache License is that it may be less protective
+of the open-source community than the GPL.
+
+* MIT License
+The MIT License is a permissive open-source license that allows for the
+free use, modification, and distribution of the software without any
+restrictions. The benefits of using the MIT License include the ability
+to use the software in proprietary products and the lack of restrictions
+on modifications. However, the downside of using the MIT License is that
+it does not provide as much protection for the open-source community as
+the GPL or Apache License.
+
+* BSD License
+The BSD License is a permissive open-source license that allows for the
+free use, modification, and distribution of the software without any
+restrictions. The benefits of using the BSD License include the ability
+to use the software in proprietary products and the lack of restrictions
+on modifications. However, the downside of using the BSD License is that
+it does not provide as much protection for the open-source community as
+the GPL or Apache License.
+
+* Mozilla Public License (MPL)
+The MPL is a copyleft open-source license that allows for the free use,
+modification, and distribution of the software, but requires any
+modifications to be licensed under the MPL as well. The benefits of
+using the MPL include the ability to use and modify the software without
+being required to distribute the modifications under the same license,
+and the ability to use the software in proprietary products as long as
+the modifications are also made available under the MPL. However, the
+downside of using the MPL is that it can be complex and difficult to
+understand for corporations.
+
+* Eclipse Public License (EPL)
+The EPL is another copyleft open-source license that allows for the free
+use, modification, and distribution of the software, but requires any
+modifications to be licensed under the EPL as well. The benefits of
+using the EPL include the ability to use and modify the software without
+being required to distribute the modifications under the same license,
+and the ability to use the software in proprietary products as long as
+the modifications are also made available under the EPL. However, the
+downside of using the EPL is that it can be complex and difficult to
+understand for corporations.
+
+* GNU Lesser General Public License (LGPLv3)
+The LGPLv3 is a modified version of the GPL that allows for the use of
+the licensed software in proprietary applications, as long as any
+modifications made to the library are released under the LGPLv3. The
+benefits of using the LGPLv3 include the ability to use the library in
+proprietary applications without having to release the entire source
+code, and the ability to distribute the library without having to
+release the entire source code of the proprietary application. However,
+the downside of using the LGPLv3 is that it can be more complicated than
+other open-source licenses, and may require additional legal work to
+ensure compliance.
+
+* GNU Affero General Public License (AGPLv3)
+The AGPLv3 is a modified version of the GPL that requires any software
+that uses or modifies the licensed software to also be licensed under
+the AGPLv3. This includes software that is used over a network, such as
+web applications. The benefits of using the AGPLv3 include the ability
+to ensure that any modifications made to the software are also released
+under the same license, and the ability to ensure that the source code
+of any web applications that use the software is made available to
+users. However, the downside of using the AGPLv3 is that it can be more
+restrictive than other open-source licenses, and may not be suitable for
+all use cases. Additionally, the requirement to make source code
+available to users of web applications can be challenging for
+corporations to comply with.
+
+* References
+- [[https://choosealicense.com/licenses/][Choose a License]]

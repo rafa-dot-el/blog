@@ -1,0 +1,133 @@
+BTRFS /data Filesystem State After Adding Temporary Device
+===========================================================
+Date: August 11, 2025 (Recovery Phase)
+Action: Added 150GB loop device to provide space for completing migration
+
+Command: sudo btrfs device add /dev/loop0 /data
+Command: sudo btrfs filesystem usage /data
+-------------------------------------------
+
+Overall:
+    Device size:                  38.34TiB  <- +150GB from temporary device
+    Device allocated:             37.78TiB
+    Device unallocated:           582.02GiB <- NOW SUFFICIENT for migration
+    Device reserved:              512.00MiB
+    Used:                         32.48TiB
+    Free (estimated):             5.69TiB   (min: 5.40TiB)
+    Free (statfs, df):            5.69TiB
+    Data ratio:                   1.00
+    Metadata ratio:               2.00
+    Global reserve:               512.00MiB (used: 0.00B)
+    Multiple profiles:            no        <- CLEAN STATE ACHIEVED
+
+Data Profiles (After Temporary Device):
+----------------------------------------
+Data,single: Size:37.53TiB, Used:32.26TiB (85.98%)
+   /dev/mapper/mass      16.13TiB
+   /dev/mapper/mass2     21.40TiB
+
+Data,RAID0: Size:134.94GiB, Used:129.53GiB (95.99%)
+   /dev/mapper/mass      67.47GiB
+   /dev/mapper/mass2     67.47GiB
+
+Metadata Profile (After Temporary Device):
+-------------------------------------------
+Metadata,RAID1: Size:61.00GiB, Used:45.39GiB (74.41%)  <- SUCCESSFULLY UNIFIED
+   /dev/mapper/mass      61.00GiB  <- Now using permanent disk
+   /dev/loop0            61.00GiB  <- Temporarily using loop device
+
+Note: Old DUP metadata (63 GB) successfully removed and consolidated into
+      clean RAID1 profile using space from temporary device.
+
+System Profile (After Temporary Device):
+-----------------------------------------
+System,RAID1: Size:32.00MiB, Used:4.08MiB (12.74%)  <- CLEAN RAID1
+   /dev/mapper/mass      32.00MiB
+   /dev/mapper/mass2     32.00MiB
+
+Note: Old DUP system chunks (8 MiB) successfully removed.
+
+Unallocated Space by Device:
+-----------------------------
+   /dev/mapper/mass      421.02GiB  <- Space recovered from consolidation
+   /dev/mapper/mass2     72.00GiB   <- Some space freed on larger disk
+   /dev/loop0            89.00GiB   <- Unused portion of temporary device
+
+
+Analysis:
+=========
+
+How the Temporary Device Solved the Problem:
+---------------------------------------------
+
+1. Added Breathing Room:
+   - Unallocated space increased from 256 GB → 582 GB
+   - Now sufficient space to complete metadata migration
+
+2. Metadata Consolidation:
+   BEFORE (Mixed):
+   - Metadata,DUP: 63.00 GiB (old profile)
+   - Metadata,RAID1: 6.00 GiB (partial migration)
+
+   AFTER (Clean):
+   - Metadata,RAID1: 61.00 GiB (fully migrated)
+   - Old DUP chunks removed and freed
+
+3. Profile State:
+   - "Multiple profiles: no" confirms clean state
+   - All metadata now uniformly RAID1
+   - All system chunks now uniformly RAID1
+   - Data conversion to RAID0 can now proceed safely
+
+4. Space Distribution:
+   - Temporary device (loop0) temporarily holds one copy of RAID1 metadata
+   - Permanent disk (mass) holds the other copy
+   - After data conversion completes, metadata will be rebalanced off loop0
+   - Then temporary device can be safely removed
+
+Next Steps After This State:
+-----------------------------
+
+1. Complete data conversion to RAID0:
+   $ sudo btrfs balance start -dconvert=raid0 /data
+
+   This will convert remaining 37.53 TiB of single-profile data to RAID0.
+   With 582 GB free, sufficient space exists for this operation.
+
+2. Clean up partially-empty chunks:
+   $ sudo btrfs balance start -dusage=70 -musage=70 /data
+
+   Consolidates fragmented allocation, frees up contiguous space.
+
+3. Rebalance metadata off temporary device:
+   $ sudo btrfs balance start -mprofiles=raid1,devid=1,devid=2 /data
+
+   Forces metadata to use only permanent devices (devid 1 = mass, devid 2 = mass2).
+
+4. Remove temporary device:
+   $ sudo btrfs device remove /dev/loop0 /data
+
+   Once metadata is off loop0, it can be safely removed.
+
+5. Verify integrity:
+   $ sudo btrfs scrub start /data
+
+   Full data verification after migration completes.
+
+
+Key Insight:
+============
+
+The temporary device technique is the CORRECT way to recover from a stuck
+balance operation caused by insufficient space. This is a well-documented
+BTRFS recovery procedure, not a workaround or hack.
+
+Alternative approaches that DON'T work:
+- Deleting files: Can't safely delete from read-only filesystem
+- Canceling balance: Already stuck, can't cancel
+- Forcing read-write: Doesn't add space, will fail again
+- Using -dusage=0: Doesn't help when no space exists for new chunks
+
+The temporary device provides the space buffer needed to complete the
+migration, after which it can be removed and space is freed on permanent
+devices.
