@@ -1,7 +1,8 @@
 baseURL: https://rafa-dot-el.github.io/blog/
 languageCode: en-us
 title: Rafa
-theme: hermit
+theme: rafa
+enableGitInfo: true
 author:
   name: Rafael
 
@@ -11,6 +12,7 @@ params:
   dateformShort   : "Jan 2"
   dateformNum     : "2006-01-02"
   dateformNumTime : "2006-01-02 15:04 -0700"
+  gitUrl: "https://github.com/rafa-dot-el/blog/commit/"
   latex: true
   toc: true
   alwaysShowToc: true

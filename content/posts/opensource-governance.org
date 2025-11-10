@@ -1,0 +1,842 @@
+#+title: A Guide for Corporations Respectfully Using Open Source
+#+Date: 2025-09-30
+#+Draft: false
+#+Tags[]: opensource governance
+#+PROPERTY: header-args :eval never-export
+
+Enterprises often treat open-source software as a free resource without
+considering the governance structures and community dynamics that
+sustain these projects. This approach overlooks the human effort behind
+the code and the relationship dynamics between corporations and
+open-source communities.
+
+Adopting open-source software should be viewed as a privilege rather
+than an entitlement. These projects exist because maintainers have
+invested their time and expertise to create software available to
+everyone at no cost. This time investment often comes at the expense
+of other activities, including paid work and personal commitments.
+Building sustainable relationships with open-source communities requires
+acknowledging these contributions.
+
+The corporate world has a troubled reputation within open-source and
+free software communities. Understanding the history of bullying,
+harassment, corporate greed, and the scars these behaviors have left on
+the community provides context for the ideas proposed here.
+
+* Corporate Rights and Boundaries
+Before discussing operational models and adoption strategies, it is
+important to establish clear boundaries. Protecting the well-being of
+open-source contributors and their projects is fundamental to a healthy
+community. Corporations must understand what they are *not* entitled to
+when using open-source software:
+
+- Maintainers' time or attention
+- Decision power over the project roadmap and scope
+- Coercion and harassment of any kind
+- Legal threats, stalking and reputation damage to maintainers
+- An SLA for any aspects of the project, bug fixes, security
+  flaws, etc.
+- Compatibility between versions
+- Automation tools to fix, migrate or recover data
+- Support for deployment or infrastructure issues
+- Assistance during incidents, regardless of urgency or severity
+- To hold maintainers liable for any loss or damage of any kind
+- Continuity of the project or commitment from the maintainers
+- Retaliation against the project or maintainers if any request is denied
+
+* Case Study: The Colors and Faker Incident
+
+In a [[https://github.com/Marak/colors.js/commit/074a0f8ed0c31c35d13d28632bd8a049ff136fb6.patch][commit to the colors.js project]], maintainer Marak intentionally
+broke the library, disrupting countless dependent applications. The
+commit message included the following statement:
+
+#+begin_quote
+Respectfully, I am no longer going to support Fortune 500s ( and other
+smaller sized companies ) with my free work.
+
+There isn't much else to say.
+
+Take this as an opportunity to send me a six figure yearly contract or
+fork the project and have someone else work on it.
+
+-- Marak
+#+end_quote
+
+Users of the widely-used open-source libraries =colors= and =faker=
+discovered their applications were generating nonsensical data and
+experiencing system failures. Initial suspicions pointed to a security
+compromise, but the situation proved more complex. The maintainer
+responsible for these libraries had intentionally introduced an infinite
+loop, causing thousands of dependent projects to break.
+
+The =colors= library serves nearly 19,000 active projects with more
+than 20 million weekly NPM downloads, while =faker= has over 2.8 million
+weekly downloads and supports over 2,500 dependent projects. The impact
+of these libraries breaking extended across numerous users and
+industries.
+
+This incident illustrates the imbalanced relationship between
+corporations and open-source maintainers. Marak had no legal or moral
+obligation to support corporations using his software. The situation
+demonstrates how open-source maintenance can become an unsustainable
+burden, leading to unhealthy dynamics between maintainers and corporate
+users.
+
+Some argued that the code in these libraries was simple enough to
+replicate easily. However, if this were true, corporations would have
+built these solutions themselves rather than depending on open-source
+alternatives. The corporate response to Marak's decision reveals the
+urgent need for better operational models and relationship policies
+regarding open-source usage.
+
+This case demonstrates a fundamental principle: corporations cannot
+treat open-source maintainers as service providers. Maintainers owe
+nothing to corporations using their software. The incident underscores
+the importance of establishing sustainable operational models and formal
+policies for corporate open-source adoption.
+
+** Analysing Marak's Request
+
+Marak's request for a six-figure salary may initially appear unreasonable
+given the library's small size and limited maintenance requirements.
+However, evaluating the request solely by lines of code or maintenance
+hours misses the fundamental issue. The appropriate measure is the
+actual business impact when the library breaks, as demonstrated by the
+widespread disruption caused by the intentional infinite loop.
+
+A critical principle emerges from this analysis: when software is
+critical to business operations, its value should not be measured by
+implementation complexity but by the impact and distress caused when it
+fails. This principle serves as a heuristic for determining appropriate
+financial investment in supporting projects, sponsoring maintainers, or
+allocating dedicated teams. Corporations cannot reasonably expect to
+receive all benefits without any costs or obligations. The common
+corporate practice of avoiding financial support due to institutional
+greed represents the core problem this article addresses.
+
+While individual corporations might view a six-figure salary as
+excessive, collective action transforms the equation. One hundred
+companies sharing this cost through voluntary cooperation[fn:voluntarism]
+would reduce each organization's contribution to a negligible amount for
+multi-billion dollar companies. This collective funding model establishes
+groundwork for the governance frameworks discussed later in this article.
+
+Based on years of experience within free software and open-source
+communities and conversations with numerous maintainers, my speculation
+is that even modest recognition would have prevented this incident. A
+single corporation providing $10,000 annually would likely have been
+sufficient for Marak to feel appreciated and motivated to continue
+maintaining the library. While the library is small and relatively
+simple to implement, corporations chose to depend on it rather than
+building their own solutions. This dependency creates responsibility.
+
+* Understanding Open Source Burnout
+
+Developers from open-source communities have reported high stress levels
+from frequent demands for features and bug fixes and from the sometimes
+aggressive tone of these demands. Research on toxic conversations in
+open-source communities[fn:toxic-conversations] has documented how these
+interactions affect maintainer well-being:
+
+#+begin_quote
+Developers from open-source communities have reported high stress levels
+from frequent demands for features and bug fixes and from the sometimes
+aggressive tone of these demands. Toxic conversations may demotivate and
+burn out developers, creating challenges for sustaining open source. We
+outline a path toward finding, understanding, and possibly mitigating
+such unhealthy interactions. We take a first step toward finding them,
+by developing and demonstrating a measurement instrument (an SVM
+classifier tailored for software engineering) to detect toxic discussions
+in GitHub issues. We used our classifier to analyze trends over time and
+in different GitHub communities, finding that toxicity varies by
+community and that toxicity decreased between 2012 and 2018.
+
+-- Naveen Raman
+#+end_quote
+
+The open-source community has extensively documented the burnout
+phenomenon. Understanding these dynamics is essential for corporations
+seeking sustainable relationships with open-source projects. The =Colors=
+and =Faker= incident serves as a stark reminder that maintainer burnout can
+have cascading effects across the entire software supply chain.
+
+Further reading on open-source/ burnout:
+
+- [[https://thenewstack.io/how-can-open-source-sustain-itself-without-creating-burnout/][The New Stack - How Can Open Source Sustain Itself without Creating Burnout?]]
+- [[https://www.bleepingcomputer.com/news/security/dev-corrupts-npm-libs-colors-and-faker-breaking-thousands-of-apps/][Dev corrupts NPM libs 'colors' and 'faker' breaking thousands of apps]]
+- [[https://betterprogramming.pub/why-open-source-developers-are-burning-out-1a860854884c][Why Open-Source Developers Are Burning Out]]
+- [[https://opensource.com/article/19/11/burnout-open-source-communities][What you need to know about burnout in open source communities]]
+- [[https://opensource.com/article/21/7/burnout-open-source][Dealing with burnout in open source]]
+- [[https://www.evilsocket.net/2020/05/26/Just-taking-a-break/][Just Taking a Break - Evilsocket]]
+
+* General Governance Model
+
+The governance model for corporate open-source adoption emerges from the
+combination of four key components: the assessment of how the project will be
+used within the company, the assessment of the project's current state
+including its maturity and security posture, the selected operational model,
+and the chosen implementation approach. These elements work together to define
+how an organization manages its relationship with open-source projects, from
+technical integration to community engagement and resource allocation.
+
+The combination of usage requirements and current technology status provides
+direction on appropriate controls, implementation strategy, and operational
+posture when adopting open-source software. This framework serves as guidance
+for how corporations can responsibly and sustainably adopt tools and
+technologies while contributing positively to projects and minimizing adoption
+risks.
+
+Organizations may adapt this framework to their specific context by
+considering additional variables, using different classification schemes, or
+adjusting risk categories to match their operational reality. The guidance
+presented here is not prescriptive but should be tailored to each company's
+circumstances, provided the adapted approach accounts for critical business
+impacts and reflects real-world operational scenarios. Each of these
+components is discussed in detail in the sections below.
+
+* Business Risk Assessment Framework
+
+Before adopting open-source software, corporations must assess the role and
+criticality of the project within their operations. Understanding how the
+software integrates into business processes, what dependencies exist, and the
+potential impact of failures informs governance decisions. Corporations should
+not feel entitled to use open-source software without proper due diligence and
+then blame, harass, or threaten maintainers or the project for their own
+shortcomings. This assessment of business usage and impact supports the
+decision on which operational model and implementation approach best fits
+organizational needs and risk tolerance.
+
+** Business Impact Assessment
+
+Before evaluating project characteristics, corporations must assess the
+business role and criticality of the open-source software within their
+operations. This assessment determines the acceptable risk levels and
+required investment in governance.
+
+Classifying project usage is essential for understanding the actual business
+impact when failures occur. Different failure scenarios create distinct
+consequences: inability to meet compliance requirements may result in
+regulatory penalties or legal liability, fully or partially stopped operations
+directly affect revenue generation and customer commitments, disrupted
+development teams delay critical updates and security patches, and
+compromised security increases the risk of data breaches with potentially
+catastrophic financial and reputational damage. This classification informs
+governance investment decisions and ensures appropriate risk mitigation
+strategies align with potential business impact.
+
+The following categories represent different levels of business dependency
+and usage patterns for open-source projects.
+
+** Mission Critical: Core Business Dependencies
+Software that forms the foundation of the business product or service
+delivery. For example, a backup hosting vendor depends critically on Proxmox
+Backup Server, ZFS or Btrfs filesystems, and the underlying Debian operating
+system. Digital certificate management represents another critical dependency,
+with tools like Certbot and ACME clients essential for automating TLS
+certificate provisioning. Small and medium businesses, along with numerous
+open-source projects, depend heavily on Let's Encrypt as their certificate
+authority.
+
+Without functioning certificate infrastructure, HTTPS services become
+inaccessible, breaking web applications, APIs, and secure communications.
+Failure of these components directly disrupts the core business offering.
+
+** Business Essential: Business Continuity Systems
+Software required for business operations to continue, typically included in
+Business Continuity Planning programs. These systems must maintain high
+availability and have defined recovery procedures. Failures impact revenue
+generation or regulatory compliance. Examples include VPN solutions like
+OpenVPN or WireGuard for secure remote access, multi-factor authentication
+systems, Single Sign-On solutions such as Keycloak providing OIDC/SAML
+authentication, directory services like OpenLDAP or FreeIPA for centralized
+user management, and database systems like PostgreSQL or MySQL that store
+critical business data. Loss of these services can halt employee productivity, prevent customer
+access, or violate compliance requirements.
+
+** Development Essential: Development Infrastructure
+Tools essential for the development organization's ability to integrate,
+build, test, and deploy code. Examples include Git for version control, build
+systems like Make or Gradle, CI/CD platforms such as Jenkins or Drone CI,
+code hosting platforms like Gitea for self-hosted solutions or GitLab which
+offers both paid support and SaaS plans, continuous deployment tools like
+ArgoCD or Flux, and container registries such as Harbor. While not directly
+customer-facing, these tools affect the organization's ability to develop and
+deploy software. In environments with heavy Infrastructure as Code usage,
+failure of these systems can prevent developers from pushing critical changes,
+deploying security fixes, or restoring services during incidents, effectively
+blocking the organization's ability to respond to production issues.
+
+** Operationally Essential: Infrastructure and Observability
+Software critical to specific operational domains, including observability and
+incident response capabilities. Examples include monitoring systems like
+Prometheus for metrics collection, logging platforms such as Loki or
+Elasticsearch for log aggregation and analysis, alert management systems like
+Alertmanager for notification routing, and visualization dashboards like
+Grafana for monitoring system health and detecting anomalies. Infrastructure
+orchestration tools like OpenTofu (Terraform) and Ansible manage deployment
+automation, while container orchestration platforms like Kubernetes and
+OpenShift handle application lifecycle. Virtualization platforms such as Xen,
+QEMU, and Proxmox provide the foundation for infrastructure management.
+
+Failure of these systems can blind operations teams to production issues,
+prevent incident detection and response, block infrastructure changes, or
+cause cascading failures in automated systems. While these tools serve
+specific operational domains, their failure can effectively halt business
+operations by preventing teams from detecting, diagnosing, or resolving
+production incidents.
+
+** Supporting: Auxiliary Components
+Libraries, utilities, and development tools that provide supporting
+functionality and can be easily replaced with alternatives. Examples include
+IDEs and editors like VS Code, Emacs, or Vim where developers can switch
+between tools without blocking code delivery, YAML parsing libraries where
+multiple equivalent options exist such as js-yaml, yaml, or yamljs in the
+Node.js ecosystem, and logging formatters where numerous interchangeable
+implementations are available. These components warrant less governance
+investment due to their replaceability and minimal impact on operational
+continuity.
+
+* Open Source Assessment Framework
+
+After assessing how a project will be used within the organization, the
+project itself must be evaluated to determine if it fits organizational
+requirements and standards. This assessment examines whether the project's
+governance structures, security practices, technical maturity, and community
+health meet the standards necessary for the intended business role. A project
+suitable for auxiliary use may lack the rigor required for mission-critical
+deployment, while business-essential systems demand higher standards across
+all evaluation dimensions.
+
+** Project Maturity Assessment
+
+Mature open-source projects typically demonstrate established governance
+structures, strong community engagement, and proven operational stability.
+These projects present lower business risks due to their polished codebases,
+active maintenance, and diverse contributor bases. Organizations often find
+that mature projects already have corporate sponsors or commercial entities
+providing support through the operational models discussed later in this
+document. The presence of multiple companies investing in and depending on a
+project signals reduced single-point-of-failure risk and sustainable
+long-term development.
+
+When evaluating an open-source project for adoption, consider the
+following maturity indicators:
+
+*** Team and Community Health
+- Number of active contributors and maintainers
+- Proportion of paid versus volunteer contributors
+- Funding sources and financial sustainability
+- Community size and engagement levels
+- Responsiveness to issues and pull requests
+- Availability of public roadmaps and governance documentation
+- Diversity of contributing organizations (reduces single-point-of-failure risk)
+
+*** Technical Excellence Indicators
+- Currency and stability of technology stack
+- Presence of automated quality checks (CI/CD pipelines, testing coverage)
+- Maturity and security posture of project dependencies
+- Automated dependency management (Dependabot, Renovate, or similar)
+- Code review practices and merge requirements
+- Documentation quality and completeness
+
+*** Release Management and Maintenance
+- Frequency and predictability of releases
+- Time to address security vulnerabilities (CVE response time)
+- Time to resolve critical bugs
+- Size and age of issue backlog
+- Clear deprecation and end-of-life policies
+
+*** Strategic Risks
+- Bait-and-switch licensing: Projects that start as open source but later
+  transition to proprietary or restrictive licensing models, trapping existing
+  adopters
+- Open-source washing: Projects marketed as open source while imposing
+  artificial limitations, requiring paid tiers for basic functionality, or
+  maintaining tight integration with proprietary SaaS platforms
+- Technical lock-in: Architecture or implementation choices that create high
+  migration costs or make switching to alternatives prohibitively expensive
+- License instability: Frequent license changes, introduction of dual-licensing
+  schemes, or unclear licensing terms that create legal uncertainty
+- Single-vendor control: Projects dominated by a single commercial entity that
+  can unilaterally change direction, prioritize commercial interests over
+  community needs, or discontinue community support
+
+** Security Posture Evaluation
+
+Security assessment is critical when evaluating open-source dependencies.
+Beyond examining the code itself, organizations must assess the project's
+vulnerability to supply chain attacks, including compromised developer
+accounts, malicious dependency injection, and unauthorized code modifications.
+The effectiveness of developer security controls such as two-factor
+authentication enforcement, commit signing requirements, and rigorous code
+review processes directly impacts the project's resilience against targeted
+attacks. Response speed and accuracy to security threats, including CVE
+disclosure handling and patch deployment timelines, reveal the project's
+security maturity. Supply chain security practices such as dependency lock
+files, automated vulnerability scanning, and proper dependency management
+demonstrate proactive risk mitigation. A thorough security evaluation should
+examine:
+
+*** Security Tooling and Practices
+- Static Application Security Testing (SAST) integration
+- Dynamic Application Security Testing (DAST) for web applications
+- Automated dependency vulnerability scanning
+- Container image scanning for projects distributing containers
+- Independent security audits
+- Fuzzing programs for input validation
+
+*** Development Security Practices
+- Commit signing requirements (GPG/SSH signatures)
+- Two-factor authentication (2FA) enforcement for maintainers
+- Branch protection rules on critical branches
+- Code review requirements before merging
+- Dependency pinning and lock files
+- Secret scanning in repositories and commits
+- Secure CI/CD pipeline configuration
+- Secure handling of credentials and secrets in automation
+- Build attestations and software bill of materials (SBOM) generation to verify
+  artifact provenance and integrity
+- Absence of dangerous coding practices such as dynamic code loading from
+  external sources at runtime, code obfuscation that prevents security review,
+  or inclusion of pre-compiled binaries without corresponding source code
+- Reproducible build systems with all dependencies explicitly declared and
+  pinned at build time, ensuring identical outputs from identical inputs and
+  eliminating dependency confusion attacks
+
+*** Security Governance and Vulnerability Management
+- Published security policy with clear vulnerability reporting procedures
+- Dedicated security contact or reporting channel (security@, bug bounty
+  program)
+- CVE identification and assignment process for discovered vulnerabilities
+- Coordinated disclosure timelines with reasonable embargoes for critical
+  issues
+- Time-to-patch metrics for security vulnerabilities by severity level
+- Security advisory publication with affected versions and remediation guidance
+- Transparency about security incidents and post-mortem analysis
+- Regular security updates and maintenance commitment
+- Clear end-of-life and security support policies for releases
+
+*** Open Source Security Foundation Security Scorecard
+
+The OSSF Scorecard[fn:ossf-scorecard] provides automated security assessment
+for open-source projects. Running this tool against potential dependencies
+offers objective metrics for security practices:
+
+#+begin_src bash
+scorecard --repo=https://github.com/crossplane/crossplane
+#+end_src
+
+#+begin_example
+RESULTS
+-------
+Aggregate score: 8.6 / 10
+
+Check scores:
+|---------|------------------------|--------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+|  SCORE  |          NAME          |             REASON             |                                               DOCUMENTATION/REMEDIATION                                               |
+|---------|------------------------|--------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| 10 / 10 | Binary-Artifacts       | no binaries found in the repo  | https://github.com/ossf/scorecard/blob/376f465c111c39c6a5ad7408e8896cd790cb5219/docs/checks.md#binary-artifacts       |
+|---------|------------------------|--------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| 8 / 10  | Branch-Protection      | branch protection is not       | https://github.com/ossf/scorecard/blob/376f465c111c39c6a5ad7408e8896cd790cb5219/docs/checks.md#branch-protection      |
+|         |                        | maximal on development and all |                                                                                                                       |
+|         |                        | release branches               |                                                                                                                       |
+|---------|------------------------|--------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| 10 / 10 | CI-Tests               | 12 out of 12 merged PRs        | https://github.com/ossf/scorecard/blob/376f465c111c39c6a5ad7408e8896cd790cb5219/docs/checks.md#ci-tests               |
+|         |                        | checked by a CI test -- score  |                                                                                                                       |
+|         |                        | normalized to 10               |                                                                                                                       |
+|---------|------------------------|--------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| 0 / 10  | CII-Best-Practices     | no badge detected              | https://github.com/ossf/scorecard/blob/376f465c111c39c6a5ad7408e8896cd790cb5219/docs/checks.md#cii-best-practices     |
+|---------|------------------------|--------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| 10 / 10 | Code-Review            | 12 out of last 12 changesets   | https://github.com/ossf/scorecard/blob/376f465c111c39c6a5ad7408e8896cd790cb5219/docs/checks.md#code-review            |
+|         |                        | reviewed before merge -- score |                                                                                                                       |
+|         |                        | normalized to 10               |                                                                                                                       |
+|---------|------------------------|--------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| 10 / 10 | Contributors           | 34 different organizations     | https://github.com/ossf/scorecard/blob/376f465c111c39c6a5ad7408e8896cd790cb5219/docs/checks.md#contributors           |
+|         |                        | found -- score normalized to   |                                                                                                                       |
+|         |                        | 10                             |                                                                                                                       |
+|---------|------------------------|--------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| 10 / 10 | Dangerous-Workflow     | no dangerous workflow patterns | https://github.com/ossf/scorecard/blob/376f465c111c39c6a5ad7408e8896cd790cb5219/docs/checks.md#dangerous-workflow     |
+|         |                        | detected                       |                                                                                                                       |
+|---------|------------------------|--------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| 10 / 10 | Dependency-Update-Tool | update tool detected           | https://github.com/ossf/scorecard/blob/376f465c111c39c6a5ad7408e8896cd790cb5219/docs/checks.md#dependency-update-tool |
+|---------|------------------------|--------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| 10 / 10 | Fuzzing                | project is fuzzed with         | https://github.com/ossf/scorecard/blob/376f465c111c39c6a5ad7408e8896cd790cb5219/docs/checks.md#fuzzing                |
+|         |                        | [GoBuiltInFuzzer]              |                                                                                                                       |
+|---------|------------------------|--------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| 10 / 10 | License                | license file detected          | https://github.com/ossf/scorecard/blob/376f465c111c39c6a5ad7408e8896cd790cb5219/docs/checks.md#license                |
+|---------|------------------------|--------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| 10 / 10 | Maintained             | 30 commit(s) out of 30 and 13  | https://github.com/ossf/scorecard/blob/376f465c111c39c6a5ad7408e8896cd790cb5219/docs/checks.md#maintained             |
+|         |                        | issue activity out of 30 found |                                                                                                                       |
+|         |                        | in the last 90 days -- score   |                                                                                                                       |
+|         |                        | normalized to 10               |                                                                                                                       |
+|---------|------------------------|--------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| ?       | Packaging              | no published package detected  | https://github.com/ossf/scorecard/blob/376f465c111c39c6a5ad7408e8896cd790cb5219/docs/checks.md#packaging              |
+|---------|------------------------|--------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| 8 / 10  | Pinned-Dependencies    | dependency not pinned by hash  | https://github.com/ossf/scorecard/blob/376f465c111c39c6a5ad7408e8896cd790cb5219/docs/checks.md#pinned-dependencies    |
+|         |                        | detected -- score normalized   |                                                                                                                       |
+|         |                        | to 8                           |                                                                                                                       |
+|---------|------------------------|--------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| 9 / 10  | SAST                   | SAST tool detected but not run | https://github.com/ossf/scorecard/blob/376f465c111c39c6a5ad7408e8896cd790cb5219/docs/checks.md#sast                   |
+|         |                        | on all commmits                |                                                                                                                       |
+|---------|------------------------|--------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| 10 / 10 | Security-Policy        | security policy file detected  | https://github.com/ossf/scorecard/blob/376f465c111c39c6a5ad7408e8896cd790cb5219/docs/checks.md#security-policy        |
+|---------|------------------------|--------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| ?       | Signed-Releases        | no releases found              | https://github.com/ossf/scorecard/blob/376f465c111c39c6a5ad7408e8896cd790cb5219/docs/checks.md#signed-releases        |
+|---------|------------------------|--------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| 0 / 10  | Token-Permissions      | non read-only tokens detected  | https://github.com/ossf/scorecard/blob/376f465c111c39c6a5ad7408e8896cd790cb5219/docs/checks.md#token-permissions      |
+|         |                        | in GitHub workflows            |                                                                                                                       |
+|---------|------------------------|--------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| 10 / 10 | Vulnerabilities        | no vulnerabilities detected    | https://github.com/ossf/scorecard/blob/376f465c111c39c6a5ad7408e8896cd790cb5219/docs/checks.md#vulnerabilities        |
+|---------|------------------------|--------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+#+end_example
+
+The scorecard evaluates projects across multiple security dimensions,
+providing scores for binary artifacts, branch protection, CI testing,
+code review practices, dependency management, fuzzing, and vulnerability
+handling. Projects scoring above 7.0[fn:scorecard-threshold] generally
+demonstrate strong security practices.
+
+* Operational Models
+Software requires skilled personnel to install, configure, customize,
+and maintain both the software and its operational infrastructure.
+Proprietary software typically comes with support contracts. Open-source
+adoption without a clear support model is naive and creates unnecessary
+risk.
+
+When sponsoring open-source maintainers, both parties must understand the
+financial dynamics. Maintainers should not expect regular employment compensation
+unless explicitly agreed. Corporations can withdraw funding at any time; this is
+particularly evident when the software in question has already reached a good enough
+maturity level. However, corporations must recognize they are working with
+individuals who have financial obligations and families to support. Providing
+advance notice before terminating funding, when possible, maintains a healthy
+relationship.
+
+Hereby I aim to address several operational frameworks for establishing mutually
+beneficial relationships between corporations and open-source communities, based
+on my and others' experiences.
+
+** Support from a specialized company
+This model involves hiring a third-party organization with expertise in
+the specific open-source software your corporation uses. This is the
+most expensive support option but provides direct access to expert
+support teams experienced in resolving issues. These companies offer
+timely responses, minimize downtime, and increase productivity. Service
+Level Agreements (SLAs) provide security by guaranteeing response times
+and aligning expectations between both parties.
+
+The primary disadvantage is cost. Specialized support requires
+significant investment, particularly challenging for smaller
+organizations. While this provides the clearest governance structure,
+not all open-source projects have companies offering specialized support
+services.
+
+Examples of companies operating under this model include Red Hat (for
+Red Hat Enterprise Linux, OpenShift, Ansible) and Canonical (for Ubuntu,
+Kubernetes, OpenStack). These companies provide enterprise support for
+their own distributions and products built on open-source software.
+
+** Sponsor a maintainer
+This model provides ongoing financial support to open-source maintainers
+working on software your corporation depends on. Sponsorship establishes
+a relationship between the corporation and maintainer, offering several
+advantages: direct communication channels, ability to influence development
+priorities, significantly lower costs than hiring specialized companies or
+internal teams, and contribution to long-term project sustainability. This
+approach also generates positive public relations by demonstrating genuine
+commitment to the open-source ecosystem.
+
+Corporations must understand that sponsorship does not grant control over
+the project. Maintainers retain autonomy over technical decisions,
+priorities, and roadmap. Setting clear expectations upfront prevents
+misunderstandings and maintains healthy working relationships. Benefits
+may not materialize immediately, particularly when operational incidents
+are infrequent. Sustainable sponsorship requires ongoing financial
+commitment rather than opportunistic engagement only during crises.
+
+*** The Incident Response Problem
+
+A problematic pattern emerges during operational incidents: corporations
+suddenly offer large payments accompanied by pressure, harassment, and
+sometimes threats to force maintainers into immediate action. This
+behavior constitutes bullying, particularly given that corporations
+frequently fail to honor their commitments. Based on my experience and
+reports from other maintainers, corporations commonly attempt to
+renegotiate agreed amounts once the crisis passes and leverage disappears.
+
+For maintainers facing such situations, I recommend two protective
+measures: maintain a standard contract template ready for emergency
+engagements, or require full payment upfront before beginning work. For
+corporations considering this approach, understand that you must follow
+through on commitments. The corporate world's poor reputation within
+open-source and free software communities stems directly from this pattern
+of broken promises.
+
+*** Distinguishing Sponsorship from Freelancing
+
+Sponsorship fundamentally differs from freelance consulting. Sponsorship
+establishes ongoing relationships with predetermined expectations and
+informal SLAs, creating a foundation for rapid response during incidents.
+Freelance arrangements, by contrast, require negotiating legal and
+financial terms for each engagement.
+
+During critical incidents, waiting for contract negotiations becomes
+impractical. This temporal mismatch creates problems: maintainers working
+without established agreements face significant risk. Once the incident
+resolves, corporations lose urgency to honor agreed payments since the
+immediate problem no longer exists. This creates an unfavorable power
+dynamic where corporations hold leverage over maintainers who performed
+work in good faith.
+
+Maintainers should protect themselves by refusing to work on incidents
+without pre-established agreements. The sponsorship model addresses this
+by setting expectations and compensation structures before crises occur.
+
+*** Example: Professional Maintainer Model
+
+Filippo Valsorda[fn:filippo] exemplifies the professional maintainer
+model. After leaving the Go Security team at Google in 2022, Valsorda
+established himself as a full-time independent open-source maintainer. He
+maintains critical projects including Go cryptography libraries, age (file
+encryption), mkcert (TLS certificates), yubikey-agent, and transparency
+tooling.
+
+His business model operates through retainer agreements rather than
+donations or hourly billing. Valsorda offers three contract tiers (silver,
+gold, platinum) at five-figure yearly rates, structured like enterprise
+vendor relationships with invoices and wire transfers. Clients receive
+value through three mechanisms: business risk mitigation (ensuring
+projects they depend on remain maintained), reciprocal access (direct
+communication with the maintainer for feedback on roadmap decisions), and
+at the highest tier, expert advisory services on cryptography, protocols,
+Go, and software supply chain security.
+
+This model aligns incentives correctly. Valsorda focuses primarily on
+maintenance work rather than selling support hours or feature contracts.
+
+** Create a dedicated development team
+This model involves hiring dedicated employees specifically responsible for
+maintaining and supporting the open-source software your corporation depends
+on. These in-house maintainers become your internal experts who understand
+both your organization's needs and the open-source project's architecture.
+
+The cost structure differs from specialized company support and depends on
+several factors: the number of dedicated employees required, their salary
+expectations, and the target SLA. While this may initially seem expensive,
+in-house maintainers can typically provide faster response times since they
+work exclusively for your organization rather than supporting multiple
+clients simultaneously.
+
+Key benefits include direct control over support processes, development of
+deep in-house expertise, and the ability to customize the software to your
+specific needs. This internal knowledge base provides long-term strategic
+value, reducing dependency on external vendors and enabling faster
+decision-making.
+
+Having in-house expertise enables rapid security response. Internal
+maintainers can patch vulnerabilities in the software and its dependencies
+without waiting for upstream fixes, significantly reducing exposure windows
+during security incidents. Organizations can also maintain internal forks,
+allowing them to preview upcoming features, test experimental changes in
+controlled environments, and roll out modifications independently of the
+upstream release schedule. This autonomy proves particularly valuable for
+organizations with specific compliance requirements or unique operational
+constraints.
+
+The primary challenge lies in recruitment. This approach requires hiring
+developers who already possess expertise in the relevant open-source
+project, or hiring experienced developers willing to invest time developing
+that specialized knowledge. Finding qualified candidates with the right
+technical background can be difficult, particularly for specialized or
+niche projects.
+
+Beyond recruitment, this model faces all the standard logistics challenges
+of managing a team: scheduling vacations, handling sick leave, managing
+unpaid time off, coordinating training periods, and ensuring knowledge
+continuity during transitions. Corporations expecting high SLAs with only
+a small number of maintainers set themselves up for failure. A team of
+one or two maintainers cannot realistically provide 24/7 coverage or
+maintain rapid response times during absences. Achieving enterprise-grade
+SLAs typically requires a larger team, significantly increasing costs.
+
+This reality makes the approach generally unfeasible for medium and
+smaller businesses. The substantial ongoing investment required to maintain
+an adequately sized team often exceeds their budget constraints. For these
+organizations, the specialized company support model discussed earlier
+frequently proves more practical and cost-effective, as these vendors
+distribute operational costs across multiple clients and maintain larger
+support teams capable of meeting SLA commitments.
+
+** Onboard part of your developer team
+This model allocates a portion of existing developers' time to contribute
+code and resources to open-source projects the organization depends on.
+Rather than hiring dedicated maintainers or paying for external support,
+corporations leverage their current engineering workforce to participate
+in upstream development.
+
+Benefits extend beyond direct technical contributions. Organizations gain
+increased influence over development processes and build internal
+expertise in critical dependencies. Contributing to open-source generates
+positive public relations and demonstrates authentic community engagement.
+For developers, this provides opportunities to build public portfolios,
+develop recognition in the open-source community, and increase job
+satisfaction through meaningful work beyond internal corporate projects.
+
+However, this approach presents significant challenges. While less
+resource-intensive than hiring a dedicated internal team, corporations
+must still invest substantial time in onboarding. Developers need adequate
+time to learn the project architecture, understand community norms, and
+become proficient contributors. Corporations cannot expect immediate
+results or miracles; meaningful contributions require developers to first
+build expertise and credibility within the project community.
+
+The model demands sustained allocation of developer time away from
+internal priorities, proving particularly challenging for smaller
+organizations with limited engineering capacity. Control over project
+direction remains limited, as open-source communities maintain their own
+priorities and governance structures. Navigating these community dynamics
+requires time and experience that cannot be rushed.
+
+Corporations must maintain realistic expectations. While less expensive
+than hiring dedicated maintainers, part-time contributors cannot match the
+output or expertise of full-time maintainers. Within the same timeframe, a
+full-time maintainer will become proficient and capable much faster than a
+part-time contributor. Developers splitting time between internal work and
+open-source contributions face context switching costs that compound the
+learning curve.
+
+Even if corporations attempt to maintain the same SLA expectations as they
+would with a dedicated internal team, part-time contributors face constant
+conflicts with other internal priorities. Urgent deliveries, production
+incidents, and internal deadlines will inevitably take precedence over
+open-source contributions, making consistent response times unrealistic.
+This model remains less resource-intensive than maintaining a full
+dedicated team for support and maintenance, but it also delivers
+correspondingly lower impact and influence within the project. Success
+requires long-term commitment measured in months or years, not weeks.
+
+* Implementation Models
+
+Corporations must choose a technical implementation approach that fits with
+their business risk assessment results, the project's characteristics, and
+the business role the software plays in their operations. This decision depends on project
+complexity, required control level, risk tolerance, and available resources.
+The colors library incident illustrates a key principle: critics argued the
+code was simple enough to replicate, yet corporations chose to depend on it
+rather than implementing their own solution. This reveals a fundamental
+contradiction in corporate behavior.
+
+When projects are simple and require extensive control over security,
+features, or governance, corporations should consider in-house
+implementations. For features that dramatically diverge from the original
+project's purpose, an internal fork represents a middle ground between a
+fully in-house product and using the upstream project directly. Internal forks allow
+corporations to maintain patches and fixes while still benefiting from
+upstream improvements when appropriate.
+
+Potential implementation approaches include:
+
+** Full Upstream Usage
+Direct use of the upstream project without modifications. Requires a
+compatible operational model (specialized company support, sponsoring
+maintainers, dedicated internal team, or part-time contributors) but minimal
+technical overhead. This approach depends entirely on upstream development and
+release cycles.
+
+Using a project from upstream without any governance model represents
+significant risk, as demonstrated by the colors library incident. For
+low-impact projects with minimal external dependencies, which reduce
+vulnerability surface area and update frequency, and low complexity, which
+requires infrequent fixes, a technical mitigation involves using dependency
+lock files to pin specific versions.
+
+Lock file mechanisms across programming languages:
+- Nix: flakes
+- Python: Poetry, UV
+- JavaScript/Node.js: Yarn, package-lock.json
+- Java: Maven's pom.xml with dependency management, Gradle lock files
+- PHP: composer.lock
+- Rust: Cargo.lock
+- Go: go.mod
+- Ruby: Gemfile.lock
+
+These tools provide reproducible builds and prevent unexpected upstream
+changes from affecting production systems.
+
+** Internal Fork for Mirroring
+Maintaining a mirror of the upstream project for supply chain security and
+availability guarantees. This approach requires some maintenance work to keep
+the mirror synchronized but does not involve code modifications. Useful for
+ensuring availability if upstream disappears or for organizations with strict
+supply chain requirements. Compatible operational models include dedicated
+internal teams or part-time contributors for mirror maintenance.
+
+When using automatic synchronization for the fork, this approach only
+prevents harm from upstream project deletion but does not protect against
+malicious changes like the colors library incident. Automatic mirroring
+without review provides no defense against intentionally broken code or
+compromised maintainer accounts.
+
+** Internal Fork with Patches
+Maintaining a fork that includes custom patches, security fixes, or feature
+modifications. Requires dedicated internal maintainers who understand both
+the upstream codebase and organizational needs. This approach provides
+control over security response times and feature deployment while still
+benefiting from upstream improvements through regular rebasing. The
+operational model must be a dedicated internal team, as the complexity of
+maintaining patches and rebasing against upstream requires full-time focus
+and expertise.
+
+** Full In-House Implementation
+Building and maintaining a complete implementation independently. This
+approach provides maximum control over all aspects but requires the heaviest
+maintainer burden. Appropriate for simple libraries where the implementation
+effort is minimal, or when requirements diverge significantly from any
+existing project.
+
+In this model, the project is no longer open-source adoption but becomes a
+standard internal project within the company's portfolio, even if the company
+chooses to publish it as open source. It falls under the same governance
+structures, resource allocation, and maintenance practices as any other
+internal software project. The operational model is inherently a dedicated
+internal team.
+
+* References
+- [[https://dl.acm.org/doi/10.1145/3377816.3381732][Toxic Behavior in Open Source Software Development]]
+- [[https://thenewstack.io/how-can-open-source-sustain-itself-without-creating-burnout/][The New Stack - How Can Open Source Sustain Itself without Creating Burnout?]]
+- [[https://www.bleepingcomputer.com/news/security/dev-corrupts-npm-libs-colors-and-faker-breaking-thousands-of-apps/][Dev corrupts NPM libs 'colors' and 'faker' breaking thousands of apps]]
+- [[https://betterprogramming.pub/why-open-source-developers-are-burning-out-1a860854884c][Why Open-Source Developers Are Burning Out]]
+- [[https://opensource.com/article/19/11/burnout-open-source-communities][What you need to know about burnout in open source communities]]
+- [[https://opensource.com/article/21/7/burnout-open-source][Dealing with burnout in open source]]
+- [[https://www.evilsocket.net/2020/05/26/Just-taking-a-break/][Just Taking a Break - Evilsocket]]
+- [[https://github.com/Marak/colors.js/commit/074a0f8ed0c31c35d13d28632bd8a049ff136fb6.patch][Colors.js Breaking Commit by Marak]]
+- [[https://github.com/ossf/scorecard][OSSF Security Scorecard]]
+
+* Footnotes
+
+[fn:filippo] Filippo Valsorda - Professional Open Source Maintainer.
+Website: https://filippo.io/ | GitHub Sponsors:
+https://github.com/sponsors/FiloSottile | Blog post "I'm Now a Full-Time
+Professional Open Source Maintainer":
+https://words.filippo.io/full-time-professional-open-source-maintainer/
+
+[fn:toxic-conversations] "Detecting and Characterizing Toxic
+Conversations in Software Development" - ACM Digital Library:
+https://dl.acm.org/doi/10.1145/3377816.3381732 | PDF:
+https://www.cs.cmu.edu/afs/cs.cmu.edu/Web/People/ckaestne/pdf/icsenier20.pdf
+
+[fn:voluntarism] Voluntarism is a philosophical principle emphasizing
+voluntary cooperation and free association as the basis for social and
+economic organization. In this context, it refers to corporations
+voluntarily cooperating to collectively fund open-source projects that
+benefit all participants, rather than relying on coercion or individual
+free-riding. See https://en.wikipedia.org/wiki/Voluntarism_(philosophy)
+
+[fn:ossf-scorecard] Open Source Security Foundation (OpenSSF) Security
+Scorecard - Automated security assessment tool for open-source projects.
+GitHub: https://github.com/ossf/scorecard | Documentation:
+https://securityscorecards.dev/
+
+[fn:scorecard-threshold] The OpenSSF Best Practices Working Group
+recommends that OSSF Scorecard scores should be above 7.0. See
+https://best.openssf.org/SCM-BestPractices/github/repository/scorecard_score_too_low.html

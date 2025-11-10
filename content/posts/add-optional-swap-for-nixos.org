@@ -26,13 +26,14 @@ the ideal swap setup may vary based on the hardware employed. Therefore, running
 benchmarks on the system before implementation can help achieve the best
 overall outcome.
 
-A quote about NVMe from Wikipedia:
 #+begin_quote
 By its design, NVM Express allows host hardware and software to fully exploit
 the levels of parallelism possible in modern SSDs. As a result, NVM Express
 reduces I/O overhead and brings various performance improvements relative to
 previous logical-device interfaces, including multiple long command queues, and
-reduced latency. - Wikipedia on NVMe
+reduced latency.
+
+-- Wikipedia on NVMe
 #+end_quote
 
 Based on the following statement from Wikipedia and benchmarks, these devices
@@ -104,7 +105,9 @@ transform to include sufficient redundancy in its plaintext to detect and
 discard such random plaintexts." This would require maintaining checksums for
 all data and metadata on disk, as done in ZFS or Btrfs. However, in commonly
 used file systems such as ext4 and NTFS only metadata is protected against
-tampering, while the detection of data tampering is non-existent. - Wikipedia
+tampering, while the detection of data tampering is non-existent.
+
+-- Wikipedia
 #+end_quote
 
 We can assume that this is not our concern given that the swap is handled and

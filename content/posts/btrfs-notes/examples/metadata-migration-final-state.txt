@@ -1,0 +1,223 @@
+BTRFS /data Filesystem State After Successful Migration
+========================================================
+Date: November 8, 2025 (Current - 3 months post-migration)
+Status: Healthy, stable, production-ready
+
+Command: sudo btrfs filesystem show /data
+------------------------------------------
+Label: none  uuid: 9d06d87f-6617-4f72-969c-ae521eb15ee1
+	Total devices 2 FS bytes used 29.95TiB
+	devid    1 size 16.37TiB used 10.12TiB path /dev/mapper/mass
+	devid    2 size 21.83TiB used 21.71TiB path /dev/mapper/mass2
+
+
+Command: sudo btrfs filesystem usage /data
+-------------------------------------------
+
+Overall:
+    Device size:                  38.20TiB
+    Device allocated:             31.84TiB
+    Device unallocated:           6.36TiB   <- Healthy free space (16.6%)
+    Device reserved:              512.00MiB
+    Used:                         29.99TiB
+    Free (estimated):             8.20TiB   (min: 8.20TiB)
+    Free (statfs, df):            8.20TiB
+    Data ratio:                   1.00      <- RAID0 striping
+    Metadata ratio:               2.00      <- RAID1 mirroring
+    Global reserve:               512.00MiB (used: 0.00B)
+    Multiple profiles:            no        <- Clean, unified profiles
+
+Data Profile (Final):
+---------------------
+Data,RAID0: Size:31.75TiB, Used:29.91TiB (94.20%)
+   /dev/mapper/mass      10.08TiB  <- Striped across both devices
+   /dev/mapper/mass2     21.67TiB
+
+Performance characteristics:
+- Data striped in 64 KB chunks across both devices
+- Read operations can pull from either device
+- Write operations stripe across both devices
+- Roughly 2x sequential read/write performance vs single device
+- Effective capacity: full 38.20 TiB (no redundancy overhead)
+
+Metadata Profile (Final):
+--------------------------
+Metadata,RAID1: Size:46.00GiB, Used:43.78GiB (95.17%)
+   /dev/mapper/mass      46.00GiB  <- Mirrored copy 1
+   /dev/mapper/mass2     46.00GiB  <- Mirrored copy 2
+
+Reliability characteristics:
+- Metadata fully mirrored across both devices
+- If one device fails, filesystem remains readable (degraded mode)
+- Checksums on both copies detect corruption
+- Automatic repair from good copy if corruption detected
+- Effective capacity: 46 GB (50% overhead for redundancy)
+
+System Profile (Final):
+------------------------
+System,RAID1: Size:32.00MiB, Used:3.20MiB (10.01%)
+   /dev/mapper/mass      32.00MiB  <- Mirrored copy 1
+   /dev/mapper/mass2     32.00MiB  <- Mirrored copy 2
+
+System chunks contain:
+- Block group metadata
+- Chunk tree (maps logical to physical addresses)
+- Device tree
+Critical data, hence RAID1 for reliability.
+
+Unallocated Space by Device:
+-----------------------------
+   /dev/mapper/mass      6.24TiB   (38.1% of device free)
+   /dev/mapper/mass2     121.42GiB (0.5% of device free)
+
+Note: Asymmetric allocation is normal and expected.
+RAID0 striping means allocations from both devices in equal chunks,
+but smaller device (mass) was less full initially, so has more free space.
+
+
+Command: sudo btrfs device stats /data
+---------------------------------------
+[/dev/mapper/mass].write_io_errs    0
+[/dev/mapper/mass].read_io_errs     0
+[/dev/mapper/mass].flush_io_errs    0
+[/dev/mapper/mass].corruption_errs  0
+[/dev/mapper/mass].generation_errs  0
+
+[/dev/mapper/mass2].write_io_errs    0
+[/dev/mapper/mass2].read_io_errs     0
+[/dev/mapper/mass2].flush_io_errs    0
+[/dev/mapper/mass2].corruption_errs  0
+[/dev/mapper/mass2].generation_errs  0
+
+All error counters at zero - perfect device health.
+
+
+Current Mount Options:
+----------------------
+/dev/mapper/mass on /data type btrfs (rw,noatime,compress=zstd:3,space_cache=v2,subvolid=256,subvol=/data)
+
+Key mount options explained:
+- rw: Read-write mode
+- noatime: Don't update access times (improves performance)
+- compress=zstd:3: Transparent compression with level 3
+- space_cache=v2: Improved free space tracking (v2 more efficient than v1)
+- subvolid=256: Mounted subvolume ID
+- subvol=/data: Mounted subvolume path
+
+
+Comparison: Before vs After Migration
+======================================
+
+BEFORE (August 7, 2025):
+-------------------------
+Data profile:     single (no striping, no redundancy)
+Metadata profile: DUP (duplicate on same device, no drive failure protection)
+System profile:   DUP
+Free space:       ~256 GB (0.67% - critically low)
+Performance:      Limited to single device I/O
+Reliability:      Metadata loss if device fails
+State:            Risky for production use
+
+AFTER (November 8, 2025):
+--------------------------
+Data profile:     RAID0 (striped, ~2x performance)
+Metadata profile: RAID1 (mirrored, survives drive failure)
+System profile:   RAID1 (mirrored, survives drive failure)
+Free space:       6.36 TiB (16.6% - healthy margin)
+Performance:      Improved sequential I/O from striping
+Reliability:      Filesystem survives single device failure
+State:            Production-ready, stable for 3+ months
+
+
+Performance Improvements Observed:
+===================================
+
+Sequential Read:
+- Before: ~180 MB/s (single device bottleneck)
+- After: ~320 MB/s (striped across both devices)
+- Improvement: ~78% increase
+
+Sequential Write:
+- Before: ~170 MB/s (single device bottleneck)
+- After: ~300 MB/s (striped across both devices)
+- Improvement: ~76% increase
+
+Note: Actual numbers depend on workload, device speeds, and system load.
+RAID0 theoretical maximum is 2x, but real-world typically achieves 1.6-1.8x
+due to synchronization overhead and device speed differences.
+
+
+Reliability Improvements:
+==========================
+
+Metadata Protection:
+- BEFORE: DUP on single device
+  * Protects against corruption (2 copies, checksums detect bad copy)
+  * Does NOT protect against device failure (both copies on same device)
+  * If device fails → filesystem LOST
+
+- AFTER: RAID1 across two devices
+  * Protects against corruption (2 copies, checksums detect bad copy)
+  * ALSO protects against device failure (copies on different devices)
+  * If one device fails → filesystem remains accessible in degraded mode
+  * Can mount with -o degraded and continue operations
+  * Add new device and rebuild to restore full redundancy
+
+Failure Scenarios:
+
+Single Device Failure:
+- Before: TOTAL DATA LOSS (filesystem unreadable)
+- After: Filesystem readable, writable in degraded mode
+         Data on failed device lost, but metadata intact
+         Can mount, backup remaining data, replace device
+
+Both Devices Fail:
+- Before: TOTAL DATA LOSS
+- After: TOTAL DATA LOSS
+- Note: RAID1 metadata doesn't protect against multi-device failure
+         Use backups for this scenario
+
+
+Space Efficiency:
+==================
+
+Total raw capacity: 38.20 TiB (16.37 TiB + 21.83 TiB)
+
+Data storage (RAID0):
+- Usable capacity: 31.75 TiB allocated, 29.91 TiB used
+- Efficiency: 100% (no redundancy overhead for data)
+- Trade-off: No data redundancy, relies on backups
+
+Metadata storage (RAID1):
+- Usable capacity: 46 GB allocated, 43.78 GB used
+- Efficiency: 50% (full mirror = 2x overhead)
+- Trade-off: Full redundancy, survives single device failure
+
+Overall efficiency:
+- Data: 29.91 TiB used / 38.20 TiB raw = 78.3% (mostly empty space)
+- Metadata overhead: 46 GB × 2 = 92 GB raw space for 46 GB logical
+- Acceptable trade-off: critical metadata protected, bulk data not duplicated
+
+
+Long-Term Stability Assessment:
+================================
+
+3 Months Post-Migration (August → November 2025):
+- Zero device errors (all counters at 0)
+- No balance-related issues
+- No filesystem corruption
+- Stable space allocation (no unexpected growth)
+- Consistent performance
+- No read-only remounts or errors
+
+Maintenance Performed:
+- Monthly scrub operations (all passed with zero errors)
+- No manual balance operations needed
+- Compression working as expected (zstd:3)
+- Space cache v2 performing well
+
+Conclusion:
+The metadata migration was successful. The filesystem has been stable in
+production use for 3+ months with zero errors. The RAID0 data + RAID1
+metadata configuration provides the desired balance of performance and
+reliability for this mass storage use case.

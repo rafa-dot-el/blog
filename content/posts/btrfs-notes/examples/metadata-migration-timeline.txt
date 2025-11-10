@@ -1,0 +1,159 @@
+BTRFS /data Metadata Migration Timeline
+========================================
+
+Date: August 7, 2025 (23:48)
+Event: Initial Migration Attempt
+----------------------------------
+Problem Identified:
+- Disks too full (over 80% capacity)
+- Suboptimal RAID profiles affecting performance
+- Data profile: single (no striping)
+- Metadata profile: DUP (duplicate on same device, no drive failure protection)
+
+Decision:
+- Convert data to RAID0 for performance (stripe across both devices)
+- Convert metadata to RAID1 for reliability (mirror across both devices)
+
+Command Executed:
+$ sudo btrfs balance start -dconvert=raid0 -mconvert=raid1 /data
+
+Additional Defragmentation:
+$ sudo btrfs filesystem defragment -rv /home/rafael/src
+$ sudo btrfs filesystem defragment -rv /home/rafael/Downloads
+$ sudo btrfs filesystem defragment -rv /home/rafael/.steam/root
+$ sudo btrfs filesystem defragment -rv /data
+
+Result: Balance operation started but filesystem became read-only
+
+
+Date: August 10, 2025 (16:20)
+Event: Crisis Point
+----------------------------------
+Problem:
+- While migrating backups, encountered BTRFS /data recovery issue
+- Filesystem had issues during balance operation
+- System attempted to auto-resume balance on mount
+
+Status: Investigating
+
+
+Date: August 10, 2025 (21:27)
+Event: Initial Diagnostic
+----------------------------------
+Commands Executed:
+$ sudo btrfs check /dev/mapper/mass
+
+Result: Check came out OK (no corruption detected)
+
+Attempted Repair:
+$ sudo btrfs check --repair /dev/mapper/mass
+
+Status: Repair attempted, investigating root cause
+
+
+Date: August 11, 2025 (19:14)
+Event: Deep Diagnostic and Root Cause Analysis
+----------------------------------
+dmesg Analysis Revealed:
+
+[  297.991719] BTRFS info (device dm-1): balance: resume -dconvert=raid0,soft -mconvert=raid1,soft -sconvert=raid1,soft
+[  298.016244] BTRFS info (device dm-1): relocating block group 63253597126656 flags metadata|dup
+[  378.633733] BTRFS info (device dm-1 state EA): forced readonly
+[  378.637750] BTRFS info (device dm-1 state EA): balance: ended with status: -30
+
+Error Code Analysis:
+- Error -30 = EROFS (Read-Only File System)
+- Triggered when filesystem runs out of space during metadata relocation
+
+Root Cause Identified:
+- Filesystem was 85-90% full (only 256 GiB unallocated)
+- Balance operation needs to create NEW metadata chunks before removing OLD chunks
+- This temporarily DOUBLES metadata space requirements
+- Insufficient free space caused operation to fail and force filesystem read-only
+
+Filesystem State at Failure:
+- Device size: 38.20 TiB
+- Device allocated: 37.95 TiB
+- Device unallocated: 256.00 GiB (only 0.67% free!)
+- Used: 32.48 TiB
+- Mixed profiles: YES (partial migration completed)
+  * Data: single (37.67 TiB) + RAID0 (145.94 GiB) - MIXED
+  * Metadata: DUP (63.00 GiB) + RAID1 (6.00 GiB) - MIXED
+  * System: DUP (8.00 MiB) + RAID1 (32.00 MiB) - MIXED
+
+
+Date: August 11, 2025 (19:30)
+Event: Recovery Solution - Temporary Device Method
+----------------------------------
+Strategy:
+Add temporary loop device to provide additional space for completing metadata migration
+
+Step 1: Create 150GB Temporary Device
+$ fallocate -l 150G /home/rafael/test/btrfs-tmp-fix
+$ sudo losetup -f /home/rafael/test/btrfs-tmp-fix
+Result: /dev/loop0 created
+
+Step 2: Remount Filesystem in Degraded Mode
+$ sudo umount -l /data
+$ sudo mount -o rw,degraded /dev/mapper/mass /data
+
+Step 3: Add Temporary Device to Array
+$ sudo btrfs device add /dev/loop0 /data
+
+Filesystem State After Temporary Device Added:
+- Device size: 38.34 TiB (+150 GB)
+- Device allocated: 37.78 TiB
+- Device unallocated: 582.02 GiB (sufficient space!)
+- Mixed profiles: NO (clean state achieved)
+- Metadata now fully on RAID1 (61.00 GiB, 74.41% used)
+
+Step 4: Complete Data Conversion
+$ sudo btrfs balance start -dconvert=raid0 /data
+Result: Successfully converted remaining data chunks to RAID0
+
+Step 5: Clean Up Old Unused Chunks
+$ sudo btrfs balance start -dusage=70 -musage=70 /data
+Result: Removed partially-empty chunks, consolidated allocation
+
+Step 6: Verify Filesystem Integrity
+$ sudo btrfs scrub start /data
+Result: Scrub completed with zero errors
+
+Step 7: Remove Temporary Device
+$ sudo btrfs device remove /dev/loop0 /data
+Result: Successfully removed, metadata redistributed to permanent devices
+
+
+Date: August 11, 2025 (Evening)
+Event: Migration Complete and Verified
+----------------------------------
+Final Configuration:
+- Data profile: RAID0 (striped across both devices)
+- Metadata profile: RAID1 (mirrored across both devices)
+- System profile: RAID1 (mirrored across both devices)
+- No mixed profiles (clean state)
+- Sufficient free space for future operations (421 GiB + 72 GiB unallocated)
+
+Updated fstab:
+UUID=9d06d87f-6617-4f72-969c-ae521eb15ee1  /data  btrfs  defaults,noatime,compress=zstd,autodefrag  0  0
+
+Status: SUCCESS - Migration complete and filesystem healthy
+
+
+Date: November 8, 2025 (Current)
+Event: Long-Term Stability Verification
+----------------------------------
+System Status After ~3 Months:
+- Filesystem healthy, zero errors
+- Device allocated: 31.84 TiB
+- Device unallocated: 6.36 TiB (16.6% free - healthy margin)
+- Data RAID0: 31.75 TiB allocated, 29.91 TiB used (94.20%)
+- Metadata RAID1: 46.00 GiB allocated, 43.78 GiB used (95.17%)
+- All device error counters at zero
+
+Performance:
+- Improved read/write performance from RAID0 data striping
+- Increased reliability from RAID1 metadata mirroring
+- No balance-related issues since migration
+
+Conclusion: Migration was successful, system stable for production use

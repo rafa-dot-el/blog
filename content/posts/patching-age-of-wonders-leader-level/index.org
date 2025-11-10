@@ -1,0 +1,587 @@
+#+title: Patching Age of Wonders
+#+Date: 2023-06-03
+#+Draft: true
+#+Tags[]: reverse-engineering, games
+#+PROPERTY: header-args :eval never-export
+
+After the update two limitations, max level and not being able to train the hero
+and leader on the arena.
+
+
+#+begin_example
+TODO
+
+change the loop instead, change the 5 for 9
+and then theh add esi executes, add a static number there
+do this for both level -> xp, and xp -> level
+
+│      ╎│   0x557876ea      bd05000000     mov ebp, 5
+│      ╎│   0x557876ef      99             cdq
+│      ╎│   0x557876f0      f7fd           idiv ebp
+│      ╎│   0x557876f2      0334c5b8848e.  add esi, dword [eax*8 + 0x558e84b8]
+
+#+end_example
+
+- [ ] Add note that this is a literate document
+
+* Code
+
+#+begin_src emacs-lisp
+(require 'ob)
+(require 'ob-ref)
+(require 'ob-comint)
+(require 'ob-eval)
+
+(defvar radare2-header-regexp "^=== .* ===$")
+(defvar radare2-shell-command "radare2")
+
+(defun org-babel-execute:reverse (body params)
+  "Execute the radare2 command specified in BODY using org-babel."
+  (let* ((command (substring-no-properties body))
+         (buffer-name "*radare2*")
+         (buffer (get-buffer-create buffer-name))
+         (args (cdr (assoc :args params)))
+         (target (cdr (assoc :target params)))
+         (session (cdr (assoc :session params)))
+         (process (get-buffer-process buffer)))
+    (unless (process-live-p process)
+      (with-current-buffer buffer
+        (setq process (start-process (if (string-empty-p session) "radare2" session)
+ buffer radare2-shell-command "-q" "-e" "scr.color=false" "-w" target))))
+    (with-current-buffer buffer
+      (erase-buffer)
+      (comint-mode)
+      (if session
+          (progn
+            (comint-send-string process (format "s %s\n" session))
+            (comint-send-string process command)
+            (comint-send-string process "q\n")
+            (set-process-filter process #'(lambda (process output)
+                                    (with-current-buffer buffer
+                                      (goto-char (point-max))
+                                      (insert output))))
+            (accept-process-output process)
+            (with-current-buffer buffer
+              (buffer-string))
+            )
+        (shell-command (format "%s '%s'" radare2-shell-command command) buffer))
+      )
+    ))
+
+(povide 'ob-reverse)
+#+end_src
+
+
+#+begin_src emacs-lisp
+(org-babel-do-load-languages 'org-babel-load-languages
+                               (append org-babel-load-languages
+                                       '((reverse . t))))
+#+end_src
+
+* Tooling
+Radare2
+
+** Nixos setup
+Literate programming using Emacs, Babel, Nixos and Radare2
+
+If you have the game installed via Steam:
+
+#+begin_src bash :session reverse
+nix-shell -p radare2 --command "radare2 -w ~/.local/share/Steam/steamapps/common/Age\ of\ Wonders/AoWEPACK.dpl"
+#+end_src
+
+#+begin_src reverse
+iS
+#+end_src
+
+#+RESULTS:
+: 0x55701000 0x558e7a00 -r-x CODE
+: 0x558e8000 0x558e9c00 -rw- DATA
+: 0x558ea000 0x558ea000 -rw- BSS
+: 0x558fb000 0x5590b200 -rw- .idata
+: 0x5590c000 0x55985800 sr-- .edata
+: 0x55986000 0x55986200 sr-- .rdata
+: 0x55987000 0x559a6e00 sr-- .reloc
+: 0x559a7000 0x559bce00 sr-- .rsrc
+
+#+begin_src reverse :session reverse :target "AoWEPACK.dpl"
+s 0x557d699c
+af
+pdf
+#+end_src
+
+
+* Starting the session
+
+Header argument =:target= points to the binary file
+
+#+begin_src reverse :session reverse :target "AoWEPACK.dpl"
+aaa
+iS
+#+end_src
+
+#+RESULTS:
+: INFO: Analyze all flags starting with sym. and entry0 (aa)
+
+* Enable training
+Arena check train cost
+Train cost based on class
+if leader or hero return -1
+make return 250
+
+#+begin_example
+[0x557876a0]> afl | grep -i arena
+0x557d699c   15    273 sym.AoWEPACK.dpl_Arena.TArena.CanTrainUnits_23EDC2EF
+0x557d6704    8     97 sym.AoWEPACK.dpl_Arena.TArena.UnitTrainCost_23EDC2EF
+0x5570688c    2     10 sym.AoWEPACK.dpl_AoWE.ArenaRStr_04ECFCC5
+0x557d7004    1      8 sym.AoWEPACK.dpl_Arena.Arena_00000000
+0x557d6fd4    1     37 sym.AoWEPACK.dpl_Arena.Finalization_51F89FF7
+0x557d6fa4    1     48 sym.AoWEPACK.dpl_Arena.RegisterArena_A579DCDA
+0x557d6ea4   10    240 sym.AoWEPACK.dpl_Arena.TEnterArenaEventLog.GetSelectionInfo_23EDC2EF
+0x557d6e28    6    123 sym.AoWEPACK.dpl_Arena.TEnterArenaEventLog.CanTrain_23EDC2EF
+0x557d6dac    6    123 sym.AoWEPACK.dpl_Arena.TEnterArenaEventLog.Train_23EDC2EF
+0x557d6da4    1      7 sym.AoWEPACK.dpl_Arena.TEnterArenaEventLog.SetSelection_23EDC2EF
+0x557d6d6c    4     56 sym.AoWEPACK.dpl_Arena.TEnterArenaEventLog.GetUnit_23EDC2EF
+0x557d6d64    1      7 sym.AoWEPACK.dpl_Arena.TEnterArenaEventLog.GetCount_23EDC2EF
+0x557d6d38    3     42 sym.AoWEPACK.dpl_Arena.TEnterArenaEventLog.Destroy_23EDC2EF
+0x557d6cf8    5     61 sym.AoWEPACK.dpl_Arena.TEnterArenaEventLog.Create_23EDC2EF
+0x557d6cf0    1      6 sym.AoWEPACK.dpl_Arena.TArenaResource.ResourceUserClassID_23EDC2EF
+0x557d6ce8    1      6 sym.AoWEPACK.dpl_Arena.TArenaResource.ClassID_23EDC2EF
+0x557d6c98    1     67 sym.AoWEPACK.dpl_Arena.TArenaResource.ResourceEditName_23EDC2EF
+0x557d6c64    5     50 sym.AoWEPACK.dpl_Arena.TArenaResource.Create_23EDC2EF
+0x557d6ba4    9    189 sym.AoWEPACK.dpl_Arena.TArena.Enter_23EDC2EF
+0x557d6b78    4     44 sym.AoWEPACK.dpl_Arena.TArena.CanEnter_23EDC2EF
+0x557d6b68    1     15 sym.AoWEPACK.dpl_Arena.TArena.CreateTE_23EDC2EF
+0x557d6644    9     61 sym.AoWEPACK.dpl_Arena.TArenaTE.Create_23EDC2EF
+0x557d6ac0    5    167 sym.AoWEPACK.dpl_Arena.TArena.TrainUnits_23EDC2EF
+0x557d67d8   12    434 sym.AoWEPACK.dpl_Arena.TArena.ExecuteTE_23EDC2EF
+0x557d6768    5    112 sym.AoWEPACK.dpl_Arena.TArena.ExecuteTrainUnit_23EDC2EF
+0x557d66f0    1     20 sym.AoWEPACK.dpl_Arena.TArena.CanDblClick_23EDC2EF
+0x557d66e8    1      6 sym.AoWEPACK.dpl_Arena.TArena.ClassID_23EDC2EF
+0x557d66b8    1     45 sym.AoWEPACK.dpl_Arena.TArenaTE.ReadWrite_23EDC2EF
+0x557d66b0    1      6 sym.AoWEPACK.dpl_Arena.TArenaTE.ClassID_23EDC2EF
+0x557d6684    5     42 sym.AoWEPACK.dpl_Arena.TArenaTE.Destroy_23EDC2EF
+0x557d661c   10     48 sym.AoWEPACK.dpl_Arena.TEnterArenaEventLog_DA7C7E03
+0x557d658c   47    189 sym.AoWEPACK.dpl_Arena..TEnterArenaEventLog_9E9D4EDC
+0x557d6528   19    118 sym.AoWEPACK.dpl_Arena.TArenaResource_1E293CF0
+0x557d6498   34    150 sym.AoWEPACK.dpl_Arena..TArenaResource_E24A0DC9
+0x557d643c   22    130 sym.AoWEPACK.dpl_Arena.TArena_5C2FD5C1
+0x557d6240  163    651 sym.AoWEPACK.dpl_Arena..TArena_2050A69A
+0x557d61e4   10     93 sym.AoWEPACK.dpl_Arena.TArenaTE_A00A7697
+0x557d6180   23    121 sym.AoWEPACK.dpl_Arena..TArenaTE_642B4770
+#+end_example
+
+** Can  train unit?
+#+begin_example
+[0x5580bde8]> s 0x557d699c
+[0x557d699c]> af
+[0x557d699c]> pdf
+┌ 273: sym.AoWEPACK.dpl_Arena.TArena.CanTrainUnits_23EDC2EF (int32_t arg_8h);
+│           ; arg int32_t arg_8h @ ebp+0x8
+│           ; var int32_t var_4h @ ebp-0x4
+│           ; var int32_t var_5h @ ebp-0x5
+│           ; var int32_t var_ch @ ebp-0xc
+│           ; var int32_t var_10h @ ebp-0x10
+│           ; var int32_t var_14h @ ebp-0x14
+│           0x557d699c      55             push ebp
+│           0x557d699d      8bec           mov ebp, esp
+│           0x557d699f      83c4ec         add esp, 0xffffffec
+│           0x557d69a2      53             push ebx
+│           0x557d69a3      56             push esi
+│           0x557d69a4      57             push edi
+│           0x557d69a5      33db           xor ebx, ebx
+│           0x557d69a7      895df0         mov dword [var_10h], ebx
+│           0x557d69aa      895dec         mov dword [var_14h], ebx
+│           0x557d69ad      8bf9           mov edi, ecx
+│           0x557d69af      8855fb         mov byte [var_5h], dl
+│           0x557d69b2      8945fc         mov dword [var_4h], eax
+│           0x557d69b5      33c0           xor eax, eax
+│           0x557d69b7      55             push ebp
+│           0x557d69b8      68ad6a7d55     push 0x557d6aad
+│           0x557d69bd      64ff30         push dword fs:[eax]
+│           0x557d69c0      648920         mov dword fs:[eax], esp
+│           0x557d69c3      8b4708         mov eax, dword [edi + 8]
+│           0x557d69c6      85c0           test eax, eax
+│       ┌─< 0x557d69c8      0f849f000000   je 0x557d6a6d
+│       │   0x557d69ce      33d2           xor edx, edx
+│       │   0x557d69d0      8955f4         mov dword [var_ch], edx
+│       │   0x557d69d3      8bf0           mov esi, eax
+│       │   0x557d69d5      b301           mov bl, 1
+│      ┌──< 0x557d69d7      eb3c           jmp 0x557d6a15
+│     ┌───> 0x557d69d9      4e             dec esi
+│     ╎││   0x557d69da      8bd6           mov edx, esi
+│     ╎││   0x557d69dc      8bc7           mov eax, edi
+│     ╎││   0x557d69de      e8b1c4f2ff     call 0x55702e94
+│     ╎││   0x557d69e3      8bd0           mov edx, eax
+│     ╎││   0x557d69e5      a194948e55     mov eax, dword [0x558e9494] ; [0x558e9494:4]=0x558fa040 sym.AoWEPACK.dpl_AoWE.AoWHSMap_6B957A58
+│     ╎││   0x557d69ea      8b00           mov eax, dword [eax]
+│     ╎││   0x557d69ec      8b80fc000000   mov eax, dword [eax + 0xfc]
+│     ╎││   0x557d69f2      e8517ffaff     call sym.AoWEPACK.dpl_AoWE.TUnitControl.FindUnit_23EDC2EF
+│     ╎││   0x557d69f7      85c0           test eax, eax
+│    ┌────< 0x557d69f9      7418           je 0x557d6a13
+│    │╎││   0x557d69fb      8bd0           mov edx, eax
+│    │╎││   0x557d69fd      8b45fc         mov eax, dword [var_4h]
+│    │╎││   0x557d6a00      e8fffcffff     call sym.AoWEPACK.dpl_Arena.TArena.UnitTrainCost_23EDC2EF
+│    │╎││   0x557d6a05      83f8ff         cmp eax, 0xffffffff
+│   ┌─────< 0x557d6a08      7405           je 0x557d6a0f
+│   ││╎││   0x557d6a0a      0145f4         add dword [var_ch], eax
+│  ┌──────< 0x557d6a0d      eb06           jmp 0x557d6a15
+│  │└─────> 0x557d6a0f      33db           xor ebx, ebx
+│  │┌─────< 0x557d6a11      eb02           jmp 0x557d6a15
+│  ││└────> 0x557d6a13      33db           xor ebx, ebx
+│  ││ ╎││   ; CODE XREFS from sym.AoWEPACK.dpl_Arena.TArena.CanTrainUnits_23EDC2EF @ 0x557d69d7(x), 0x557d6a0d(x), 0x557d6a11(x)
+│  └└──└──> 0x557d6a15      84db           test bl, bl
+│     ╎┌──< 0x557d6a17      7404           je 0x557d6a1d
+│     ╎││   0x557d6a19      85f6           test esi, esi
+│     └───< 0x557d6a1b      75bc           jne 0x557d69d9
+│      └──> 0x557d6a1d      84db           test bl, bl
+│      ┌──< 0x557d6a1f      7471           je 0x557d6a92
+│      ││   0x557d6a21      0fbe55fb       movsx edx, byte [var_5h]
+│      ││   0x557d6a25      a194948e55     mov eax, dword [0x558e9494] ; [0x558e9494:4]=0x558fa040 sym.AoWEPACK.dpl_AoWE.AoWHSMap_6B957A58
+│      ││   0x557d6a2a      8b00           mov eax, dword [eax]
+│      ││   0x557d6a2c      8b8040010000   mov eax, dword [eax + 0x140]
+│      ││   0x557d6a32      e899daf7ff     call sym.AoWEPACK.dpl_AoWE.TPlayerList.GetPlayers_23EDC2EF
+│      ││   0x557d6a37      8b80c4000000   mov eax, dword [eax + 0xc4]
+│      ││   0x557d6a3d      3b45f4         cmp eax, dword [var_ch]
+│     ┌───< 0x557d6a40      7c04           jl 0x557d6a46
+│     │││   0x557d6a42      b301           mov bl, 1
+│    ┌────< 0x557d6a44      eb4c           jmp 0x557d6a92
+│    │└───> 0x557d6a46      33db           xor ebx, ebx
+│    │ ││   0x557d6a48      8d55ec         lea edx, [var_14h]
+│    │ ││   0x557d6a4b      a1b4918e55     mov eax, dword [0x558e91b4] ; [0x558e91b4:4]=0x5570719c sym.AoWEPACK.dpl_AoWE.NotEnoughGoldRStr_8276FCC3
+│    │ ││   0x557d6a50      e8bba7f2ff     call 0x55701210
+│    │ ││   0x557d6a55      8b45ec         mov eax, dword [var_14h]
+│    │ ││   0x557d6a58      8d55f0         lea edx, [var_10h]
+│    │ ││   0x557d6a5b      e89cdff4ff     call sym.AoWEPACK.dpl_AoWE.TranslateRStr_435799AA
+│    │ ││   0x557d6a60      8b55f0         mov edx, dword [var_10h]
+│    │ ││   0x557d6a63      8b4508         mov eax, dword [arg_8h]
+│    │ ││   0x557d6a66      e8e5a6f2ff     call 0x55701150
+│    │┌───< 0x557d6a6b      eb25           jmp 0x557d6a92
+│    │││└─> 0x557d6a6d      33db           xor ebx, ebx
+│    │││    0x557d6a6f      8d55ec         lea edx, [var_14h]
+│    │││    0x557d6a72      a110918e55     mov eax, dword [0x558e9110] ; [0x558e9110:4]=0x55707a6c sym.AoWEPACK.dpl_AoWE.NoUnitSelectedRStr_8276FCC3
+│    │││    0x557d6a77      e894a7f2ff     call 0x55701210
+│    │││    0x557d6a7c      8b45ec         mov eax, dword [var_14h]
+│    │││    0x557d6a7f      8d55f0         lea edx, [var_10h]
+│    │││    0x557d6a82      e875dff4ff     call sym.AoWEPACK.dpl_AoWE.TranslateRStr_435799AA
+│    │││    0x557d6a87      8b55f0         mov edx, dword [var_10h]
+│    │││    0x557d6a8a      8b4508         mov eax, dword [arg_8h]
+│    │││    0x557d6a8d      e8bea6f2ff     call 0x55701150
+│    │││    ; CODE XREFS from sym.AoWEPACK.dpl_Arena.TArena.CanTrainUnits_23EDC2EF @ 0x557d6a44(x), 0x557d6a6b(x)
+│    └└└──> 0x557d6a92      33c0           xor eax, eax
+│           0x557d6a94      5a             pop edx
+│           0x557d6a95      59             pop ecx
+│           0x557d6a96      59             pop ecx
+│           0x557d6a97      648910         mov dword fs:[eax], edx
+│           0x557d6a9a      68b46a7d55     push 0x557d6ab4
+│           0x557d6a9f      8d45ec         lea eax, [var_14h]
+│           0x557d6aa2      ba02000000     mov edx, 2
+│           0x557d6aa7      e89ca6f2ff     call 0x55701148
+└           0x557d6aac      c3             ret
+#+end_example
+
+
+** Get unit costs
+#+begin_example
+[0x557d699c]> s 0x557d6704
+[0x557d6704]> af
+[0x557d6704]> pdf
+            ; CALL XREF from sym.AoWEPACK.dpl_Arena.TArena.CanTrainUnits_23EDC2EF @ 0x557d6a00(x)
+┌ 97: sym.AoWEPACK.dpl_Arena.TArena.UnitTrainCost_23EDC2EF ();
+│           0x557d6704      53             push ebx
+│           0x557d6705      56             push esi
+│           0x557d6706      8bda           mov ebx, edx
+│           0x557d6708      8bc3           mov eax, ebx
+│           0x557d670a      8b15ac1f7155   mov edx, dword [0x55711fac] ; [0x55711fac:4]=0x55711fec sym.AoWEPACK.dpl_AoWE..THero_228E24B5
+│           0x557d6710      e8aba9f2ff     call sub.VCL30.dpl_System._IsClass_51F89FF7
+│           0x557d6715      84c0           test al, al
+│       ┌─< 0x557d6717      7406           je 0x557d671f
+│       │   0x557d6719      83c8ff         or eax, 0xffffffff          ; -1
+│       │   0x557d671c      5e             pop esi
+│       │   0x557d671d      5b             pop ebx
+│       │   0x557d671e      c3             ret
+│       └─> 0x557d671f      8bc3           mov eax, ebx
+│           0x557d6721      8b156c0c7155   mov edx, dword [0x55710c6c] ; [0x55710c6c:4]=0x55710cac sym.AoWEPACK.dpl_AoWE..TUnit_53822AF1
+│           0x557d6727      e894a9f2ff     call sub.VCL30.dpl_System._IsClass_51F89FF7
+│           0x557d672c      84c0           test al, al
+│       ┌─< 0x557d672e      742f           je 0x557d675f
+│       │   0x557d6730      8bf3           mov esi, ebx
+│       │   0x557d6732      8bc6           mov eax, esi
+│       │   0x557d6734      e813c2faff     call sym.AoWEPACK.dpl_AoWE.TUnit.GetRank_23EDC2EF
+│       │   0x557d6739      3c02           cmp al, 2                   ; 2
+│      ┌──< 0x557d673b      741d           je 0x557d675a
+│      ││   0x557d673d      8bc6           mov eax, esi
+│      ││   0x557d673f      8b10           mov edx, dword [eax]
+│      ││   0x557d6741      ff9264010000   call dword [edx + 0x164]    ; 356
+│      ││   0x557d6747      8bf0           mov esi, eax
+│      ││   0x557d6749      8bc3           mov eax, ebx
+│      ││   0x557d674b      8b10           mov edx, dword [eax]
+│      ││   0x557d674d      ff925c010000   call dword [edx + 0x15c]    ; 348
+│      ││   0x557d6753      2bf0           sub esi, eax
+│      ││   0x557d6755      8d04b6         lea eax, [esi + esi*4]
+│     ┌───< 0x557d6758      eb08           jmp 0x557d6762
+│     │└──> 0x557d675a      83c8ff         or eax, 0xffffffff          ; -1
+│     │┌──< 0x557d675d      eb03           jmp 0x557d6762
+│     ││└─> 0x557d675f      83c8ff         or eax, 0xffffffff          ; -1
+│     ││    ; CODE XREFS from sym.AoWEPACK.dpl_Arena.TArena.UnitTrainCost_23EDC2EF @ 0x557d6758(x), 0x557d675d(x)
+│     └└──> 0x557d6762      5e             pop esi
+│           0x557d6763      5b             pop ebx
+└           0x557d6764      c3             ret
+#+end_example
+*** Patch unit costs for Heroes and Leaders
+#+begin_example
+[0x5580bde8]> iS
+[Sections]
+
+nth paddr           size vaddr          vsize perm type name
+――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――
+0   0x00000400  0x1e6a00 0x55701000  0x1e7000 -r-x ---- CODE
+1   0x001e6e00    0x1c00 0x558e8000    0x2000 -rw- ---- DATA
+2   0x001e8a00       0x0 0x558ea000   0x11000 -rw- ---- BSS
+3   0x001e8a00   0x10200 0x558fb000   0x11000 -rw- ---- .idata
+4   0x001f8c00   0x79800 0x5590c000   0x7a000 sr-- ---- .edata
+5   0x00272400     0x200 0x55986000    0x1000 sr-- ---- .rdata
+6   0x00272600   0x1fe00 0x55987000   0x20000 sr-- ---- .reloc
+7   0x00292400   0x15e00 0x559a7000   0x16000 sr-- ---- .rsrc
+#+end_example
+
+#+begin_src python :results output
+print("Area suitable for a code cave 0x55701000 -> "+str(hex(0x55701000 + 0x1e7000 )))
+#+end_src
+
+#+RESULTS:
+: Area suitable for a code cave 0x55701000 -> 0x558e8000
+
+
+JMP 5580bf00
+
+patch
+
+│       │   0x557d6719      83c8ff         or eax, 0xffffffff
+│       │   0x557d671c      5e             pop esi
+│       │   0x557d671d      5b             pop ebx
+│       │   0x557d671e      c3             ret
+
+to
+
+Sections to find a code cave
+Code cave
+
+#+begin_example
+[0x5580bde8]> s 0x5580bf00
+[0x5580bf00]> pd 5
+│           0x5580bf00      31c0           xor eax, eax
+│           0x5580bf02      b8fa000000     mov eax, 0xfa               ; 250
+│           0x5580bf07      5e             pop esi
+│           0x5580bf08      5b             pop ebx
+└           0x5580bf09      c3             ret
+#+end_example
+
+* Change maximum level to 45
+
+#+begin_example
+[0x557876a0]> afl | grep -i 'thero.*level'
+0x55787628    6     69 sym.AoWEPACK.dpl_AoWE.THero.GetLevelMax_23EDC2EF
+0x557876a0    6     49 sym.AoWEPACK.dpl_AoWE.THero.LevelToExperience_23EDC2EF
+0x5578a63c    7     87 sym.AoWEPACK.dpl_AoWE.THeroControl.GetMinFreeHeroLevel_23EDC2EF
+0x5578a5d8    9    100 sym.AoWEPACK.dpl_AoWE.THeroControl.GetAverageFreeHeroLevel_23EDC2EF
+0x557876d4    4     53 sym.AoWEPACK.dpl_AoWE.THero.ExperienceToLevel_23EDC2EF
+0x5578831c    3     53 sym.AoWEPACK.dpl_AoWE.THero.GetAbilityLevel_23EDC2EF
+0x55787750   11     98 sym.AoWEPACK.dpl_AoWE.THero.SetLevel_23EDC2EF
+0x55787740    1     15 sym.AoWEPACK.dpl_AoWE.THero.GetLevel_23EDC2EF
+0x5578770c    3     50 sym.AoWEPACK.dpl_AoWE.THero.GetNextLevelExperience_23EDC2EF
+0x55786a7c    1      4 sym.AoWEPACK.dpl_AoWE.THero.GetUnitLevel_23EDC2EF
+0x55752acc   10    132 sym.AoWEPACK.dpl_AoWE.TPlayer.GetHeroJoinLevelMax_23EDC2EF
+0x55801b54    1      8 sym.AoWEPACK.dpl_HeroGrid.THeroGrid.SortOnLevel_23EDC2EF
+0x55809504    3     22 sym.AoWEPACK.dpl_HeroCtrl.THeroControlGrid.SortOnLevel_23EDC2EF
+#+end_example
+
+** Get max level
+#+begin_example
+[0x5580bde8]> s 0x55787628
+[0x55787628]> af
+[0x55787628]> pdf
+┌ 69: sym.AoWEPACK.dpl_AoWE.THero.GetLevelMax_23EDC2EF ();
+│                b81e000000     mov eax, 0x1e               ; '-' ; 30
+│           0x5578762d      833d40a08f55.  cmp dword [sym.AoWEPACK.dpl_AoWE.AoWHSMap_6B957A58], 0 ; [0x558fa040:4]=0
+│       ┌─< 0x55787634      7436           je 0x5578766c
+│       │   0x55787636      8b1540a08f55   mov edx, dword [sym.AoWEPACK.dpl_AoWE.AoWHSMap_6B957A58] ; [0x558fa040:4]=0
+│       │   0x5578763c      83ba8c010000.  cmp dword [edx + 0x18c], 0
+│      ┌──< 0x55787643      7427           je 0x5578766c
+│      ││   0x55787645      8b1540a08f55   mov edx, dword [sym.AoWEPACK.dpl_AoWE.AoWHSMap_6B957A58] ; [0x558fa040:4]=0
+│      ││   0x5578764b      8b928c010000   mov edx, dword [edx + 0x18c]
+│      ││   0x55787651      837a1800       cmp dword [edx + 0x18], 0
+│     ┌───< 0x55787655      7e15           jle 0x5578766c
+│     │││   0x55787657      8b1540a08f55   mov edx, dword [sym.AoWEPACK.dpl_AoWE.AoWHSMap_6B957A58] ; [0x558fa040:4]=0
+│     │││   0x5578765d      8b928c010000   mov edx, dword [edx + 0x18c]
+│     │││   0x55787663      8b5218         mov edx, dword [edx + 0x18]
+│     │││   0x55787666      3bc2           cmp eax, edx
+│    ┌────< 0x55787668      7e02           jle 0x5578766c
+│    ││││   0x5578766a      8bc2           mov eax, edx
+└    └└└└─> 0x5578766c      c3             ret
+#+end_example
+
+*** Patch max level
+
+#+begin_src python :results output
+print(hex(45))
+#+end_src
+
+#+RESULTS:
+: 0x2d
+
+#+begin_example
+[0x55787628]> wa mov EAX,0x2D
+INFO: Written 5 byte(s) (mov EAX,0x2D) = wx b82d000000 @ 0x55787628
+[0x55787628]> pdf
+┌ 69: sym.AoWEPACK.dpl_AoWE.THero.GetLevelMax_23EDC2EF ();
+│           0x55787628      b82d000000     mov eax, 0x2d               ; '-' ; 45
+│           0x5578762d      833d40a08f55.  cmp dword [sym.AoWEPACK.dpl_AoWE.AoWHSMap_6B957A58], 0 ; [0x558fa040:4]=0
+│       ┌─< 0x55787634      7436           je 0x5578766c
+│       │   0x55787636      8b1540a08f55   mov edx, dword [sym.AoWEPACK.dpl_AoWE.AoWHSMap_6B957A58] ; [0x558fa040:4]=0
+│       │   0x5578763c      83ba8c010000.  cmp dword [edx + 0x18c], 0
+│      ┌──< 0x55787643      7427           je 0x5578766c
+│      ││   0x55787645      8b1540a08f55   mov edx, dword [sym.AoWEPACK.dpl_AoWE.AoWHSMap_6B957A58] ; [0x558fa040:4]=0
+│      ││   0x5578764b      8b928c010000   mov edx, dword [edx + 0x18c]
+│      ││   0x55787651      837a1800       cmp dword [edx + 0x18], 0
+│     ┌───< 0x55787655      7e15           jle 0x5578766c
+│     │││   0x55787657      8b1540a08f55   mov edx, dword [sym.AoWEPACK.dpl_AoWE.AoWHSMap_6B957A58] ; [0x558fa040:4]=0
+│     │││   0x5578765d      8b928c010000   mov edx, dword [edx + 0x18c]
+│     │││   0x55787663      8b5218         mov edx, dword [edx + 0x18]
+│     │││   0x55787666      3bc2           cmp eax, edx
+│    ┌────< 0x55787668      7e02           jle 0x5578766c
+│    ││││   0x5578766a      8bc2           mov eax, edx
+└    └└└└─> 0x5578766c      c3             ret
+#+end_example
+
+** Experience to next level
+If not max level, check experience for current level + 1
+** Experience to Level
+#+begin_example
+TODO
+
+change the loop instead, change the 5 for 9
+and then theh add esi executes, add a static number there
+do this for both level -> xp, and xp -> level
+
+│      ╎│   0x557876ea      bd05000000     mov ebp, 5
+│      ╎│   0x557876ef      99             cdq
+│      ╎│   0x557876f0      f7fd           idiv ebp
+│      ╎│   0x557876f2      0334c5b8848e.  add esi, dword [eax*8 + 0x558e84b8]
+
+#+end_example
+
+
+Param in =EDX= current level
+Result is stored in =ESI= and then =EAX=.
+What paramsk
+
+#+begin_example
+[0x557876a5]> s 0x557876a3
+[0x557876a3]> wa mov eax, edx
+INFO: Written 2 byte(s) (mov eax, edx) = wx 89d0 @ 0x557876a3
+[0x557876a3]> s 0x557876a5
+[0x557876a5]> wa imul eax,10
+INFO: Written 3 byte(s) (imul eax,10) = wx 6bc00a @ 0x557876a5
+[0x557876a5]> s 0x557876a8
+[0x557876a8]> wa jmp 0x557876cd
+INFO: Written 2 byte(s) (jmp 0x557876cd) = wx eb23 @ 0x557876a8
+[0x557876a8]> pdf
+┌ 49: sym.AoWEPACK.dpl_AoWE.THero.LevelToExperience_23EDC2EF ();
+│           0x557876a0      53             push ebx
+│           0x557876a1      56             push esi
+│           0x557876a2      57             push edi
+│           0x557876a3      89d0           mov eax, edx
+│           0x557876a5      6bc00a         imul eax, eax, 0xa
+│       ┌─< 0x557876a8      eb23           jmp 0x557876cd
+│      ┌──< 0x557876aa      7e1f           jle 0x557876cb
+│      ││   0x557876ac      bb01000000     mov ebx, 1
+│     ┌───> 0x557876b1      8bc3           mov eax, ebx
+│     ╎││   0x557876b3      bf05000000     mov edi, 5
+│     ╎││   0x557876b8      99             cdq
+│     ╎││   0x557876b9      f7ff           idiv edi
+│     ╎││   0x557876bb      83f805         cmp eax, 5                  ; 5
+│    ┌────< 0x557876be      7f07           jg 0x557876c7
+│    │╎││   0x557876c0      0334c5b8848e.  add esi, dword [eax*8 + 0x558e84b8]
+│    └────> 0x557876c7      43             inc ebx
+│     ╎││   0x557876c8      49             dec ecx
+│     └───< 0x557876c9      75e6           jne 0x557876b1
+│      └──> 0x557876cb      8bc6           mov eax, esi
+│       └─> 0x557876cd      5f             pop edi
+│           0x557876ce      5e             pop esi
+│           0x557876cf      5b             pop ebx
+└           0x557876d0      c3             ret
+#+end_example
+
+
+** Level to Experience
+#+begin_example
+TODO
+
+change the loop instead, change the 5 for 9
+and then theh add esi executes, add a static number there
+do this for both level -> xp, and xp -> level
+
+│      ╎│   0x557876ea      bd05000000     mov ebp, 5
+│      ╎│   0x557876ef      99             cdq
+│      ╎│   0x557876f0      f7fd           idiv ebp
+│      ╎│   0x557876f2      0334c5b8848e.  add esi, dword [eax*8 + 0x558e84b8]
+
+#+end_example
+
+Level  to experience function caps at level / 5 < 6.
+
+#+begin_example
+[0x5580bde8]> s 0x557876a0
+[0x557876a0]> af
+[0x557876a0]> pdf
+┌ 49: sym.AoWEPACK.dpl_AoWE.THero.LevelToExperience_23EDC2EF ();
+│           0x557876a0      53             push ebx
+│           0x557876a1      56             push esi
+│           0x557876a2      57             push edi
+│           0x557876a3      33f6           xor esi, esi
+│           0x557876a5      8bca           mov ecx, edx               ; edx=level
+│           0x557876a7      49             dec ecx
+│           0x557876a8      85c9           test ecx, ecx
+│       ┌─< 0x557876aa      7e1f           jle 0x557876cb
+│       │   0x557876ac      bb01000000     mov ebx, 1
+│      ┌──> 0x557876b1      8bc3           mov eax, ebx
+│      ╎│   0x557876b3      bf05000000     mov edi, 5
+│      ╎│   0x557876b8      99             cdq
+│      ╎│   0x557876b9      f7ff           idiv edi
+│      ╎│   0x557876bb      83f805         cmp eax, 5                  ; 5
+│     ┌───< 0x557876be      7f07           jg 0x557876c7
+│     │╎│   0x557876c0      0334c5b8848e.  add esi, dword [eax*8 + 0x558e84b8]
+│     └───> 0x557876c7      43             inc ebx
+│      ╎│   0x557876c8      49             dec ecx                    ; Level
+│      └──< 0x557876c9      75e6           jne 0x557876b1
+│       └─> 0x557876cb      8bc6           mov eax, esi
+│           0x557876cd      5f             pop edi
+│           0x557876ce      5e             pop esi
+│           0x557876cf      5b             pop ebx
+└           0x557876d0      c3             ret
+#+end_example
+
+
+* Bug "Exception during MapViewer.ShowScene"
+two instances of this
+
+https://github.com/jopadan/ilbtools/blob/main/src/aowpatch.chttps://github.com/jopadan/ilbtools/blob/main/src/aowpatch.c
+
+Ilpack.dpl
+
+#+begin_src c
+	static const unsigned char pattern[] = {
+		0x66, 0x8B, 0x16, 0x8D,
+		0x74, 0x16, 0x03, 0x81,
+		0xE6, 0xFC, 0xFF, 0xFF,
+		0x0F, 0x48, 0x75, 0xF0,
+	};
+	static const unsigned char replacement[] = {
+		0x66, 0x8B, 0x16, 0x8D,
+		0x74, 0x16, 0x03, 0x81,
+		0xE6, 0xFC, 0xFF, 0xFF,
+		0xFF, 0x48, 0x75, 0xF0,
+	};
+#+end_src
+* Final patch

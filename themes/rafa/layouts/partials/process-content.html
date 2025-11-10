@@ -1,0 +1,4 @@
+{{- $content := .Content -}}
+{{- /* Add quote-author class to paragraphs starting with -- or – (with possible whitespace) */ -}}
+{{- $content = replaceRE `<p>\s*((?:–|--)\s+[^<]+?)\s*</p>` `<p class="quote-author">$1</p>` $content -}}
+{{- $content | safeHTML -}}
