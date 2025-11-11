@@ -1,7 +1,7 @@
-#+title: A Guide for Corporations Respectfully Using Open Source
+#+title: A Common Sense Guide for Corporations Using Open Source
 #+Date: 2025-09-30
 #+Draft: false
-#+Tags[]: opensource governance
+#+Tags[]: opensource governance freesoftware
 #+PROPERTY: header-args :eval never-export
 
 Enterprises often treat open-source software as a free resource without
@@ -386,7 +386,7 @@ examine:
 - Fuzzing programs for input validation
 
 *** Development Security Practices
-- Commit signing requirements (GPG/SSH signatures)
+- Commit signing requirements (GPG/SSH[fn:sshcommit] signatures)
 - Two-factor authentication (2FA) enforcement for maintainers
 - Branch protection rules on critical branches
 - Code review requirements before merging
@@ -813,6 +813,9 @@ internal team.
 - [[https://github.com/ossf/scorecard][OSSF Security Scorecard]]
 
 * Footnotes
+[fn:sshcommit] Sign Git commits with SSH keys by =git config --global gpg.format
+ssh= and then =git config --global user.signingkey ~/.ssh/examplekey.pub=.
+https://docs.gitlab.com/user/project/repository/signed_commits/ssh/
 
 [fn:filippo] Filippo Valsorda - Professional Open Source Maintainer.
 Website: https://filippo.io/ | GitHub Sponsors:
