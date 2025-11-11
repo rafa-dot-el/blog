@@ -15,21 +15,35 @@
   let gTimer = null;
   let linkHintsActive = false;
   let hintElements = [];
+  let currentHintInput = ''; // Track multi-character hint input
   const scrollAmount = 120; // pixels to scroll for j/k
   const scrollDuration = 100; // smooth scroll duration in ms
 
-  // Generate hint labels (a-z, then aa-zz, etc.)
-  function generateHintLabel(index) {
+  // Generate hint labels with consistent length based on total links
+  // 1-26 links: single char (a-z)
+  // 27-676 links: two chars (aa-zz)
+  // 677+ links: three or more chars
+  function generateHintLabel(index, totalLinks) {
     const chars = 'abcdefghijklmnopqrstuvwxyz';
-    let label = '';
-    let num = index;
 
-    do {
-      label = chars[num % 26] + label;
-      num = Math.floor(num / 26) - 1;
-    } while (num >= 0);
-
-    return label;
+    if (totalLinks <= 26) {
+      // Single character hints
+      return chars[index];
+    } else if (totalLinks <= 676) {
+      // Two character hints (26 * 26 = 676)
+      const first = Math.floor(index / 26);
+      const second = index % 26;
+      return chars[first] + chars[second];
+    } else {
+      // Three or more characters (original algorithm)
+      let label = '';
+      let num = index;
+      do {
+        label = chars[num % 26] + label;
+        num = Math.floor(num / 26) - 1;
+      } while (num >= 0);
+      return label;
+    }
   }
 
   // Show link hints
@@ -44,9 +58,12 @@
 
     linkHintsActive = true;
     hintElements = [];
+    currentHintInput = ''; // Reset input when showing hints
+
+    const totalLinks = links.length;
 
     links.forEach((link, index) => {
-      const label = generateHintLabel(index);
+      const label = generateHintLabel(index, totalLinks);
       const rect = link.getBoundingClientRect();
 
       // Create hint overlay
@@ -80,12 +97,16 @@
     });
     hintElements = [];
     linkHintsActive = false;
+    currentHintInput = ''; // Reset input state
   }
 
-  // Handle hint key press
+  // Handle hint key press - builds multi-character input
   function handleHintKey(key) {
+    // Build up the hint string
+    currentHintInput += key.toLowerCase();
+
     const matchingHints = hintElements.filter(({ label }) =>
-      label.startsWith(key.toLowerCase())
+      label.startsWith(currentHintInput)
     );
 
     if (matchingHints.length === 0) {
@@ -93,17 +114,29 @@
       return;
     }
 
-    if (matchingHints.length === 1 && matchingHints[0].label === key.toLowerCase()) {
+    if (matchingHints.length === 1 && matchingHints[0].label === currentHintInput) {
       // Exact match - open link
       const { link } = matchingHints[0];
       hideLinkHints();
-      window.open(link.href, '_blank');
+
+      // Check if link is internal (same origin) or external
+      const isInternal = link.hostname === window.location.hostname ||
+                         link.href.startsWith('/') ||
+                         link.href.startsWith('#');
+
+      if (isInternal) {
+        // Internal link - navigate in same window
+        window.location.href = link.href;
+      } else {
+        // External link - open in new window
+        window.open(link.href, '_blank');
+      }
       return;
     }
 
     // Filter hints
     hintElements.forEach(({ hint, label }) => {
-      if (!label.startsWith(key.toLowerCase())) {
+      if (!label.startsWith(currentHintInput)) {
         hint.remove();
       }
     });
