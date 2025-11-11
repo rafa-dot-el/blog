@@ -18,6 +18,7 @@ params:
   alwaysShowToc: true
   homeSubtitle: Personal blog
   rssMessage: "Ditch social media, use RSS"
+  justifyContent: true
   social:
     github:
       name: github
