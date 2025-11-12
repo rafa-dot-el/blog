@@ -50,6 +50,23 @@
   font-style: normal;
 }
 
+// Hurmit Nerd Font - Local hosting
+@font-face {
+  font-family: 'Hurmit Nerd Font';
+  src: url('/blog/fonts/HurmitNerdFontMono-Regular.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Hurmit Nerd Font';
+  src: url('/blog/fonts/HurmitNerdFontMono-Bold.otf') format('opentype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 $theme: #25272c;
 $text: #d2d1cd;
 $light-grey: #505050;
@@ -61,7 +78,7 @@ $midnightblue: #2c3032;
 //
 //$fonts: "Trebuchet MS", Verdana, "Verdana Ref", "Segoe UI", Candara, "Lucida Grande", "Lucida Sans Unicode", "Lucida Sans", Tahoma, sans-serif;
 //$code-fonts: Consolas, "Andale Mono WT", "Andale Mono", Menlo, Monaco, "Lucida Console", "Lucida Sans Typewriter", "DejaVu Sans Mono", "Bitstream Vera Sans Mono", "Liberation Mono", "Nimbus Mono L", "Courier New", Courier, "YaHei Consolas Hybrid", monospace, "Segoe UI Emoji", "PingFang SC", "Microsoft YaHei";
-$code-fonts: 'Tamzen', monospace;
+$code-fonts: 'Hurmit Nerd Font', 'Hurmit', monospace;
 $fonts: 'Sorts Mill Goudy', serif;
 
 // Font Sizes - Three-Tier System
