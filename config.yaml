@@ -28,6 +28,13 @@ taxonomies:
   tag: tags
   category: categories
 
+markup:
+  highlight:
+    style: monokai
+    lineNos: false
+    lineNumbersInTable: false
+    noClasses: false
+
 privacy:
   youtube:
     disabled: false
