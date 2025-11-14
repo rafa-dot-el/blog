@@ -50,10 +50,11 @@
   font-style: normal;
 }
 
-// Hurmit Nerd Font - Local hosting
+// Hurmit Nerd Font - Local hosting (optimized with subset)
 @font-face {
   font-family: 'Hurmit Nerd Font';
-  src: url('/blog/fonts/HurmitNerdFontMono-Regular.otf') format('opentype');
+  src: url('/blog/fonts/HurmitNerdFontMono-Regular.woff2') format('woff2'),
+       url('/blog/fonts/HurmitNerdFontMono-Regular.otf') format('opentype');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -61,7 +62,8 @@
 
 @font-face {
   font-family: 'Hurmit Nerd Font';
-  src: url('/blog/fonts/HurmitNerdFontMono-Bold.otf') format('opentype');
+  src: url('/blog/fonts/HurmitNerdFontMono-Bold.woff2') format('woff2'),
+       url('/blog/fonts/HurmitNerdFontMono-Bold.otf') format('opentype');
   font-weight: 700;
   font-style: normal;
   font-display: swap;
