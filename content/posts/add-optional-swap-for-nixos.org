@@ -1,7 +1,7 @@
-#+title: Add Optional Swap For NixOS
+#+title: [RETRACTED] Add Optional Swap For NixOS
 #+Tags[]: nixos linux
 #+Date: 2023-04-09
-#+Draft: false
+#+Draft: true
 #+PROPERTY: header-args :eval never-export
 
 SSDs are primarily valued for their speed, although inexpensive SSDs may
