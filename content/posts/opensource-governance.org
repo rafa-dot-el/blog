@@ -18,6 +18,15 @@ of other activities, including paid work and personal commitments.
 Building sustainable relationships with open-source communities requires
 acknowledging these contributions.
 
+The privilege of using open-source software does not create obligations
+toward the project or its maintainers. However, corporations that depend
+on software they do not control bear responsibility for their own
+governance and risk management. This responsibility is owed to themselves
+and their stakeholders, not to the open-source project. Corporations
+cannot outsource accountability for their supply chain decisions to
+unpaid maintainers, nor can they reasonably expect maintainers to absorb
+the consequences of corporate dependency choices.
+
 The corporate world has a troubled reputation within open-source and
 free software communities. Understanding the history of bullying,
 harassment, corporate greed, and the scars these behaviors have left on
@@ -43,6 +52,14 @@ when using open-source software:
 - To hold maintainers liable for any loss or damage of any kind
 - Continuity of the project or commitment from the maintainers
 - Retaliation against the project or maintainers if any request is denied
+
+What corporations are entitled to is defined entirely by the license
+terms. They may use the software according to its license, fork the
+project and maintain their own version, submit issues and pull requests
+without expectation of acceptance, participate in community discussions
+as equals, and choose whether to contribute back unless the license
+requires it. These rights come with no reciprocal obligations from
+maintainers beyond what the license specifies.
 
 * Case Study: The Colors and Faker Incident
 
@@ -97,38 +114,127 @@ policies for corporate open-source adoption.
 
 ** Analysing Marak's Request
 
-Marak's request for a six-figure salary may initially appear unreasonable
-given the library's small size and limited maintenance requirements.
-However, evaluating the request solely by lines of code or maintenance
-hours misses the fundamental issue. The appropriate measure is the
-actual business impact when the library breaks, as demonstrated by the
-widespread disruption caused by the intentional infinite loop.
-
-A critical principle emerges from this analysis: when software is
+A critical principle emerges from this incident: when software is
 critical to business operations, its value should not be measured by
-implementation complexity but by the impact and distress caused when it
-fails. This principle serves as a heuristic for determining appropriate
-financial investment in supporting projects, sponsoring maintainers, or
-allocating dedicated teams. Corporations cannot reasonably expect to
-receive all benefits without any costs or obligations. The common
-corporate practice of avoiding financial support due to institutional
-greed represents the core problem this article addresses.
+implementation complexity but by the impact caused when it fails. This
+principle serves as a heuristic for determining appropriate financial
+investment in supporting projects, sponsoring maintainers, or allocating
+dedicated teams. Corporations cannot reasonably expect to receive all
+benefits without any costs or obligations. The common corporate practice
+of avoiding financial support due to institutional greed represents the
+core problem this article addresses.
 
-While individual corporations might view a six-figure salary as
-excessive, collective action transforms the equation. One hundred
-companies sharing this cost through voluntary cooperation[fn:voluntarism]
-would reduce each organization's contribution to a negligible amount for
-multi-billion dollar companies. This collective funding model establishes
-groundwork for the governance frameworks discussed later in this article.
+Applying this impact-based valuation to the =colors= and =faker= libraries
+reveals a substantial figure. With nearly 20 million weekly downloads
+and thousands of dependent projects across multiple industries, the
+aggregate business value derived from these libraries likely justifies
+significant compensation when measured by corporate standards for
+critical infrastructure support. Whether this reaches six figures
+depends on calculation methodology, but the figure is certainly not
+trivial.
 
-Based on years of experience within free software and open-source
+However, fair market value and minimum viable appreciation are distinct
+concepts. Based on years of experience within free software and open-source
 communities and conversations with numerous maintainers, my speculation
 is that even modest recognition would have prevented this incident. A
 single corporation providing $10,000 annually would likely have been
 sufficient for Marak to feel appreciated and motivated to continue
-maintaining the library. While the library is small and relatively
-simple to implement, corporations chose to depend on it rather than
-building their own solutions. This dependency creates responsibility.
+maintaining the library. The gap between what the impact-based valuation
+might justify and the minimum threshold for maintainer motivation
+illustrates the tragedy: corporations often refuse to pay even the lower
+amount.
+
+While the library is small and relatively simple to implement,
+corporations chose to depend on it rather than building their own
+solutions. This dependency creates responsibility for their own
+governance, as established earlier.
+
+** Collective Funding and Game Theory
+
+The collective funding model offers a path forward. Individual
+corporations might view significant compensation as excessive, but
+collective action transforms the equation. One hundred companies sharing
+costs through voluntary cooperation[fn:voluntarism] would reduce each
+organization's contribution to a negligible amount for multi-billion
+dollar companies.
+
+This dynamic can be analyzed through game theory[fn:game-theory]. The
+situation resembles an Assurance Game[fn:assurance-game] (also known as
+the Stag Hunt) rather than a Prisoner's Dilemma[fn:prisoners-dilemma]. The
+key distinction: in a Prisoner's Dilemma, defection is always individually
+rational regardless of others' choices; in an Assurance Game, cooperation
+becomes individually rational once enough others cooperate.
+
+*** Formal Model
+
+Consider a game with $N$ corporations, each choosing to Contribute ($C$)
+or Defect ($D$). Let:
+
+- $N$ = corporations using the project
+- $k_{-i}$ = contributors excluding player $i$
+- $c$ = contribution cost per corporation
+- $v$ = value from a maintained project, where $v \gg c$
+- $T$ = minimum contributors for sustainability
+
+The utility for player $i$ depends on their choice and how many others
+contribute:
+
+\begin{equation}
+u_i(s_i, k_{-i}) =
+\begin{cases}
+v - c & \text{if } s_i = C \text{ and } k_{-i} \geq T - 1 \\
+v & \text{if } s_i = D \text{ and } k_{-i} \geq T \\
+0 & \text{otherwise}
+\end{cases}
+\end{equation}
+
+In plain terms: if I contribute and at least $T - 1$ others do too, the
+project survives and I receive $v - c$. If I free-ride but at least $T$
+others contribute, I get $v$ without paying. Otherwise the project fails
+and everyone gets nothing.
+
+*** Nash Equilibrium[fn:nash-equilibrium] Analysis
+
+A Nash equilibrium is a state where no player benefits from unilaterally
+changing their strategy. This game has two equilibria:
+
+*Cooperative Equilibrium:* Suppose $k_{-i} = T - 1$ (I am the marginal
+contributor). My options:
+
+| Choice     | Total Contributors | Project Status | My Utility |
+|------------+--------------------+----------------+------------|
+| Contribute | $T$                | Survives       | $v - c$    |
+| Defect     | $T - 1$            | Fails          | $0$        |
+
+Since $v - c > 0$, I stay. Contributors at the margin have no incentive to
+defect. Free riders[fn:free-rider] receive $v > v - c$, so they have no
+incentive to start contributing, but their presence does not destabilize
+the equilibrium.
+
+*Defection Equilibrium:* Suppose $k_{-i} = 0$ (no one else contributes).
+My options:
+
+| Choice     | Total Contributors | Project Status | My Utility |
+|------------+--------------------+----------------+------------|
+| Contribute | $1$                | Fails          | $0$        |
+| Defect     | $0$                | Fails          | $0$        |
+
+Contributing alone cannot reach $T$, so I gain nothing by being first. This
+equilibrium is Pareto-inferior[fn:pareto] to cooperation: everyone would
+be better off if they all contributed, but no individual can improve their
+outcome alone. This is the tragedy of the commons[fn:tragedy-commons].
+
+*** Equilibrium Selection
+
+The critical insight: free riders are tolerable once $T$ is reached. The
+failure mode is not free riding but insufficient coordination to reach
+$T$ initially. This distinguishes the Assurance Game from the Prisoner's
+Dilemma, where defection dominates regardless of others' choices.
+
+Open-source funding initiatives should focus on reaching sustainability
+thresholds rather than universal participation. Ten committed sponsors
+at $k \geq T$ may be more sustainable than fifty sporadic donors where
+$k$ fluctuates around $T$.
 
 * Understanding Open Source Burnout
 
@@ -512,6 +618,17 @@ individuals who have financial obligations and families to support. Providing
 advance notice before terminating funding, when possible, maintains a healthy
 relationship.
 
+The trust asymmetry discussed throughout this article suggests that informal
+sponsorship arrangements may be insufficient. Formal written agreements between
+corporations and maintainers create accountability on both sides. Such agreements
+should include provisions for notice periods before termination, protecting
+maintainers from sudden income loss while giving corporations clear terms for
+the relationship. While formalization adds friction to sponsorship arrangements,
+it addresses the very trust deficit that causes maintainers to be wary of
+corporate engagement. If corporations genuinely want maintainers to trust them,
+written commitments demonstrate that intention more effectively than verbal
+assurances.
+
 Hereby I aim to address several operational frameworks for establishing mutually
 beneficial relationships between corporations and open-source communities, based
 on my and others' experiences.
@@ -760,22 +877,56 @@ Lock file mechanisms across programming languages:
 - Go: go.mod
 - Ruby: Gemfile.lock
 
-These tools provide reproducible builds and prevent unexpected upstream
-changes from affecting production systems.
+Lock files serve a specific purpose: ensuring reproducible builds and version
+consistency across development environments, CI/CD pipelines, and production
+deployments. When properly used, every team member and every deployment uses
+identical dependency versions, eliminating "works on my machine" problems and
+ensuring predictable behavior.
+
+However, lock files do not provide security against malicious upstream changes.
+They freeze a known-good state at a point in time, but that state requires
+periodic updates for security patches and bug fixes. When developers run
+dependency update commands or accept automated pull requests from tools like
+Dependabot or Renovate, they pull in new versions that may contain malicious
+code. The colors library incident would not have been prevented by lock files
+alone; the malicious code would have been incorporated during the next routine
+dependency update.
+
+Lock files therefore require complementary governance: a review process for
+dependency updates that verifies changes before accepting them into the locked
+state. Without such review, lock files merely delay exposure to malicious
+changes rather than preventing it. For low-impact projects where the
+cost of thorough review exceeds the risk, lock files provide a reasonable
+baseline that at least prevents silent, automatic updates during builds.
 
 ** Internal Fork for Mirroring
-Maintaining a mirror of the upstream project for supply chain security and
-availability guarantees. This approach requires some maintenance work to keep
-the mirror synchronized but does not involve code modifications. Useful for
-ensuring availability if upstream disappears or for organizations with strict
-supply chain requirements. Compatible operational models include dedicated
-internal teams or part-time contributors for mirror maintenance.
+Maintaining a mirror of the upstream project for availability guarantees and
+controlled update workflows. This approach requires some maintenance work to
+keep the mirror synchronized but does not involve code modifications.
+Compatible operational models include dedicated internal teams or part-time
+contributors for mirror maintenance.
 
-When using automatic synchronization for the fork, this approach only
-prevents harm from upstream project deletion but does not protect against
-malicious changes like the colors library incident. Automatic mirroring
-without review provides no defense against intentionally broken code or
-compromised maintainer accounts.
+The protection offered by mirroring depends entirely on the synchronization
+strategy. Automatic synchronization without review protects only against
+project deletion or unavailability. If the upstream repository vanishes,
+the organization retains access to the code. Additionally, mirroring the
+source repository can protect against attacks that publish malicious code
+directly to package registries (npm, PyPI, crates.io) while leaving the
+source repository clean, since the organization builds from their mirrored
+source rather than pulling pre-built packages.
+
+However, automatic mirroring provides no defense against malicious changes
+committed to the source repository itself, such as the colors library
+incident or compromised maintainer accounts. The malicious code would be
+automatically synchronized to the mirror and subsequently deployed.
+
+Meaningful supply chain protection requires mirroring with manual review
+gates: changes from upstream are fetched but not merged automatically.
+Instead, a review process examines upstream commits before incorporating
+them into the organization's mirror. This approach trades synchronization
+speed for security, as updates require human verification. Organizations
+must weigh the review burden against their risk tolerance and the
+criticality of the dependency.
 
 ** Internal Fork with Patches
 Maintaining a fork that includes custom patches, security fixes, or feature
@@ -843,3 +994,41 @@ https://securityscorecards.dev/
 [fn:scorecard-threshold] The OpenSSF Best Practices Working Group
 recommends that OSSF Scorecard scores should be above 7.0. See
 https://best.openssf.org/SCM-BestPractices/github/repository/scorecard_score_too_low.html
+
+[fn:assurance-game] The Assurance Game (Stag Hunt) is a game-theoretic
+model where cooperation becomes individually rational once enough others
+cooperate, unlike the Prisoner's Dilemma where defection is always
+dominant. See Skyrms, Brian. "The Stag Hunt and the Evolution of Social
+Structure" (Cambridge University Press, 2004) and the Stanford Encyclopedia
+of Philosophy entry on the Stag Hunt:
+https://plato.stanford.edu/entries/game-theory/#StagHunt
+
+[fn:pareto] A Pareto-inferior outcome is one where at least one alternative
+exists that would make some participants better off without making anyone
+worse off. In game theory, an equilibrium is Pareto-inferior when another
+equilibrium exists with higher payoffs for all players. See
+https://en.wikipedia.org/wiki/Pareto_efficiency
+
+[fn:game-theory] Game theory is the study of mathematical models of
+strategic interactions among rational agents. See
+https://en.wikipedia.org/wiki/Game_theory
+
+[fn:prisoners-dilemma] The Prisoner's Dilemma is a canonical example in
+game theory where two rational agents might not cooperate even when it
+appears in their best interest to do so. See
+https://en.wikipedia.org/wiki/Prisoner%27s_dilemma
+
+[fn:nash-equilibrium] A Nash equilibrium is a solution concept where no
+player can benefit by changing only their own strategy while other players
+keep theirs unchanged. Named after mathematician John Nash. See
+https://en.wikipedia.org/wiki/Nash_equilibrium
+
+[fn:tragedy-commons] The tragedy of the commons describes a situation where
+individual users acting independently according to their own self-interest
+behave contrary to the common good of all users by depleting or spoiling a
+shared resource. See https://en.wikipedia.org/wiki/Tragedy_of_the_commons
+
+[fn:free-rider] The free-rider problem occurs when those who benefit from
+resources, public goods, or services do not pay for them or under-pay,
+resulting in under-provision of those goods or services. See
+https://en.wikipedia.org/wiki/Free-rider_problem
